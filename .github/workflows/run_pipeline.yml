@@ -1,0 +1,71 @@
+name: CelebA Face AI Pipeline & Verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      pipeline_stage:
+        description: 'Select pipeline stage to execute'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - data_integrity
+          - mcp_protocol_check
+          - inference_check
+          - benchmark_check
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  validate_pipeline:
+    name: Execute Face AI & Model Pipeline
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Core Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify Application Syntax & Compilation
+        run: |
+          python -m py_compile app.py
+          python -m py_compile app/app.py
+
+      - name: Validate Dataset Metadata & Benchmarks
+        run: |
+          python -c "
+          import pandas as pd
+          attr = pd.read_csv('data/metadata/list_attr_celeba.csv', nrows=10)
+          celebs = pd.read_csv('data/metadata/celebrities.csv')
+          bench = pd.read_csv('reports/model_benchmark_results.csv')
+          print('Attributes loaded successfully: shape =', attr.shape)
+          print('Celebrities ground truth loaded: count =', len(celebs))
+          print('Model benchmark metrics verified: count =', len(bench))
+          "
+
+      - name: Set up Node.js for MCP Servers
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Verify MCP Server Syntax
+        run: |
+          node -c mcp/mysql_mcp_server.mjs
+          node -c mcp/google_photos_mcp_server.mjs
+
+      - name: Run Pipeline Automation Suite
+        run: |
+          python workflow/pipeline_runner.py --stage "${{ github.event.inputs.pipeline_stage || 'all' }}"

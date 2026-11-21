@@ -1,0 +1,9 @@
+Model Configuration,Strategy,Test Loss,Accuracy,Precision,Recall,F1-Score,Status
+Artificial Neural Network (ANN),Standard Split,0.4420,77.87%,0.7850,0.7510,0.7676,Fully Connected Baseline
+Spatial BiLSTM (RNN),Sequential Row-Wise BiLSTM,0.3420,86.10%,0.8670,0.8350,0.8507,Spatial Sequence Baseline
+5-Fold Bagged Residual CNN,5-Fold ResNet + In-Model Aug,0.3850,84.60%,0.8520,0.8140,0.8326,Deep Residual CNN
+Vision Transformer (ViT),Patch-16 Multi-Head Self-Attention,0.2392,90.25%,0.9210,0.8770,0.8985,Transformer SOTA
+Single-Fold XGBoost,Identity-Disjoint Standard Split,0.2562,89.15%,0.9082,0.8650,0.8861,Tabular Tree Baseline
+5-Fold Bagged XGBoost,5-Fold Stratified Group Bagging,0.2405,89.87%,0.9181,0.8720,0.8945,Strong Bagged Model
+5-Fold Ensemble (XGB+CNN+ViT),Multi-Architecture Probability Blending,0.2260,91.40%,0.9320,0.8890,0.9100,Multi-Architecture Ensemble
+5-Fold Ensemble + TTA,Bagged Ensemble + Test-Time Augmentation,0.2215,91.85%,0.9385,0.8940,0.9157,Best Overall / Highest Precision

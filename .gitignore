@@ -1,0 +1,71 @@
+# ==============================================================================
+# Git Ignore Configuration for CelebA Face Attribute Classification Project
+# ==============================================================================
+
+# 1. Large Image Dataset (>200,000 files, ~1.5 GB)
+# Download instructions available in README.md
+img_align_celeba/
+*.png
+*.jpg
+*.jpeg
+
+# Preserve benchmark report figures
+!reports/figures/*.png
+!reports/figures/*.jpg
+
+# 2. MySQL Database Data Directory & Binary Storage (~350 MB)
+# Recreate database using database/load_celeba.sql
+mysql_data/
+*.ibd
+*.frm
+ibdata*
+ib_logfile*
+auto.cnf
+*.pid
+*.err
+*.log
+
+# 3. Model Weights & Large Checkpoints
+*.h5
+*.keras
+*.weights.h5
+*.pkl
+*.joblib
+*.npy
+*.npz
+
+# 4. Python & Jupyter Runtime Artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.ipynb_checkpoints/
+*.egg-info/
+dist/
+build/
+
+# 5. Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# 6. Operating System & Editor Metadata
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 7. Compressed Archives
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z

@@ -17,6 +17,7 @@ class Residual1DCNN(nn.Module):
     1D Residual Convolutional Neural Network with identity shortcut connections.
     Emulates ResNet architectural features for facial attribute prediction.
     """
+
     def __init__(self, input_dim: int = 64, num_classes: int = 1):
         super().__init__()
         self.conv1 = nn.Conv1d(1, 32, kernel_size=3, padding=1)
@@ -39,6 +40,7 @@ class BiLSTMAttributeClassifier(nn.Module):
     Bidirectional Long Short-Term Memory (BiLSTM) sequence network.
     Extracts forward and backward spatial dependencies across facial representations.
     """
+
     def __init__(self, input_dim: int = 64, hidden_dim: int = 32, num_classes: int = 1):
         super().__init__()
         self.lstm = nn.LSTM(1, hidden_dim, batch_first=True, bidirectional=True)
@@ -57,10 +59,15 @@ class MiniVisionTransformer(nn.Module):
     Miniature Vision Transformer (ViT) with multi-head self-attention.
     Computes global relationship weights across facial attribute tokens.
     """
-    def __init__(self, input_dim: int = 64, embed_dim: int = 32, num_heads: int = 4, num_classes: int = 1):
+
+    def __init__(
+        self, input_dim: int = 64, embed_dim: int = 32, num_heads: int = 4, num_classes: int = 1
+    ):
         super().__init__()
         self.proj = nn.Linear(1, embed_dim)
-        self.attn = nn.MultiheadAttention(embed_dim=embed_dim, num_heads=num_heads, batch_first=True)
+        self.attn = nn.MultiheadAttention(
+            embed_dim=embed_dim, num_heads=num_heads, batch_first=True
+        )
         self.fc = nn.Linear(embed_dim, num_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

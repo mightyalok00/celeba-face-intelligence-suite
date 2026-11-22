@@ -23,10 +23,15 @@ def run_google_ai_studio_analysis(image_path: str, model_name: str = "gemini-1.5
     """
     Executes multimodal face intelligence analysis using Google AI Studio.
     Cross-references deep learning model predictions and database metadata.
+
+    Args:
+        image_path: String path to the target face image.
+        model_name: Target Google AI Studio Gemini model (e.g., 'gemini-1.5-flash').
     """
+    # Step 1: Validate input image existence on local filesystem
     p = Path(image_path)
     if not p.exists():
-        print(f"Error: Image path '{image_path}' does not exist.")
+        print(f"Error: Target image path '{image_path}' does not exist.")
         sys.exit(1)
 
     print("=" * 70)
@@ -35,7 +40,7 @@ def run_google_ai_studio_analysis(image_path: str, model_name: str = "gemini-1.5
     print(f"  AI Studio Model: {model_name}")
     print("=" * 70)
 
-    # 1. Google AI Studio Gemini Multimodal Reasoning
+    # Step 2: Google AI Studio Gemini Multimodal Facial Attribute Extraction
     studio = GeminiFaceIntelligenceStudio(model_name=model_name)
     print("\n[1/2] Querying Google AI Studio Gemini Multimodal API...")
     result = studio.analyze_face(p)
@@ -44,9 +49,13 @@ def run_google_ai_studio_analysis(image_path: str, model_name: str = "gemini-1.5
     print("Structured Gemini Biometric Output:")
     print(json.dumps(result.get("analysis", {}), indent=2))
 
-    # 2. Local Deep Learning Neural Network Verification
-    print("\n[2/2] Running Local Deep Learning Checkpoint Verification (PyTorch Residual CNN + ViT)...")
+    # Step 3: Local Deep Learning Neural Network Verification
+    # Cross-references the multimodal reasoning against real PyTorch checkpoints with 5-view TTA
+    print(
+        "\n[2/2] Running Local Deep Learning Checkpoint Verification (PyTorch Residual CNN + ViT)..."
+    )
     try:
+        # Load unified inference engine with trained weights from models/checkpoints/
         engine = ModelInferenceEngine()
         dl_pred = engine.predict_attribute(p, architecture="Residual CNN", use_tta=True)
         print(f"  • Deep Learning Model: {dl_pred['architecture']}")
@@ -64,15 +73,18 @@ def run_google_ai_studio_analysis(image_path: str, model_name: str = "gemini-1.5
 
 
 def main() -> None:
+    """CLI entry point for executing Google AI Studio facial intelligence analysis."""
     parser = argparse.ArgumentParser(
         description="Google AI Studio Multimodal Face Intelligence Application"
     )
+    # Define image path argument (defaults to sample 000001.png in CelebA dataset)
     parser.add_argument(
         "--image",
         type=str,
         default="img_align_celeba/000001.png",
         help="Path to facial image for Google AI Studio analysis",
     )
+    # Define model selection argument (supports gemini-1.5-flash and gemini-1.5-pro)
     parser.add_argument(
         "--model",
         type=str,

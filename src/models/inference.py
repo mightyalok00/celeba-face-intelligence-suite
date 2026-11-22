@@ -53,12 +53,15 @@ class ModelInferenceEngine:
     Loads actual trained model checkpoints from disk and executes genuine
     inference and test-time augmentation (TTA).
     """
+
     def __init__(self, checkpoints_dir: Optional[Path] = None) -> None:
         self.device = DEVICE
         if checkpoints_dir is not None:
             self.checkpoints_dir = checkpoints_dir
         else:
-            self.checkpoints_dir = Path(__file__).resolve().parent.parent.parent / "models" / "checkpoints"
+            self.checkpoints_dir = (
+                Path(__file__).resolve().parent.parent.parent / "models" / "checkpoints"
+            )
         self.models: Dict[str, Any] = {}
         self.loaded_checkpoints: Dict[str, str] = {}
         self._init_and_load_models()
@@ -66,8 +69,12 @@ class ModelInferenceEngine:
     def _init_and_load_models(self) -> None:
         """Instantiates all 4 deep learning architectures and loads trained checkpoints."""
         self.models["Residual CNN"] = ResidualConv2DCNN().to(self.device).eval()
-        self.models["Vision Transformer"] = VisionTransformerClassifier(embed_dim=32, depth=2, num_heads=2).to(self.device).eval()
-        self.models["Spatial BiLSTM"] = SpatialBiLSTMClassifier(hidden_dim=32).to(self.device).eval()
+        self.models["Vision Transformer"] = (
+            VisionTransformerClassifier(embed_dim=32, depth=2, num_heads=2).to(self.device).eval()
+        )
+        self.models["Spatial BiLSTM"] = (
+            SpatialBiLSTMClassifier(hidden_dim=32).to(self.device).eval()
+        )
         self.models["ANN"] = ANNClassifier(input_dim=39).to(self.device).eval()
 
         ckpt_files = {
@@ -86,7 +93,9 @@ class ModelInferenceEngine:
                 except Exception as e:
                     self.loaded_checkpoints[arch_name] = f"Initialized without weights: {e}"
             else:
-                self.loaded_checkpoints[arch_name] = "Initialized without checkpoint (file not found)"
+                self.loaded_checkpoints[arch_name] = (
+                    "Initialized without checkpoint (file not found)"
+                )
 
     def predict_attribute(
         self,
@@ -107,11 +116,13 @@ class ModelInferenceEngine:
             if use_tta:
                 # Genuine Test-Time Augmentation: 5 augmented views
                 views = [
-                    tensor,                                            # 1. Original
-                    torch.flip(tensor, dims=[3]),                     # 2. Horizontal reflection
-                    torch.clamp(tensor + 0.05, 0.0, 1.0),              # 3. Positive brightness shift
-                    torch.clamp(tensor - 0.05, 0.0, 1.0),              # 4. Negative brightness shift
-                    torch.clamp(torch.flip(tensor, dims=[3]) + 0.02, 0.0, 1.0),  # 5. Flip + subtle shift
+                    tensor,  # 1. Original
+                    torch.flip(tensor, dims=[3]),  # 2. Horizontal reflection
+                    torch.clamp(tensor + 0.05, 0.0, 1.0),  # 3. Positive brightness shift
+                    torch.clamp(tensor - 0.05, 0.0, 1.0),  # 4. Negative brightness shift
+                    torch.clamp(
+                        torch.flip(tensor, dims=[3]) + 0.02, 0.0, 1.0
+                    ),  # 5. Flip + subtle shift
                 ]
                 probs = [float(model.predict_proba(v).cpu().numpy().item()) for v in views]
                 prob = float(np.mean(probs))

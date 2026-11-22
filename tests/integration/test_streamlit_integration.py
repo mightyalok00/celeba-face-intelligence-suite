@@ -67,19 +67,24 @@ def test_mcp_face_identification_live_db_match():
     confirming live provenance and attribute extraction.
     """
     import pandas as pd
-    mock_df = pd.DataFrame([{
-        "image_id": "000001.jpg",
-        "file_name": "000001.jpg",
-        "detected_person_name": "Celebrity Alpha",
-        "identity_cluster_id": 101,
-        "detected_gender": "Female",
-        "detected_age_group": "Young",
-        "detected_expression": "Smiling",
-        "wearing_eyeglasses": "No",
-        "hair_type": "Brown",
-        "total_photos_of_person": 25,
-        "file_path": "img_align_celeba/000001.jpg"
-    }])
+
+    mock_df = pd.DataFrame(
+        [
+            {
+                "image_id": "000001.jpg",
+                "file_name": "000001.jpg",
+                "detected_person_name": "Celebrity Alpha",
+                "identity_cluster_id": 101,
+                "detected_gender": "Female",
+                "detected_age_group": "Young",
+                "detected_expression": "Smiling",
+                "wearing_eyeglasses": "No",
+                "hair_type": "Brown",
+                "total_photos_of_person": 25,
+                "file_path": "img_align_celeba/000001.jpg",
+            }
+        ]
+    )
 
     with patch("app.app.query_mysql", return_value=(mock_df, None)):
         req, resp, structured = execute_mcp_face_identification("000001.jpg")

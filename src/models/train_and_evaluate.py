@@ -152,7 +152,7 @@ def train_and_evaluate_all_models(sample_limit: int = 3000) -> Dict[str, Any]:
     np.random.seed(42)
     torch.manual_seed(42)
 
-    is_smoke_test = (sample_limit < 1000)
+    is_smoke_test = sample_limit < 1000
 
     # 1. Ingest dataset and split
     df = load_dataset(sample_limit=sample_limit, target_attr="Smiling")
@@ -218,28 +218,36 @@ def train_and_evaluate_all_models(sample_limit: int = 3000) -> Dict[str, Any]:
 
         # 2. Genuine PyTorch ANN Training
         model_ann = ANNClassifier(input_dim=39).to(DEVICE)
-        model_ann = train_pytorch_binary_classifier(model_ann, X_f_tr, y_f_tr, epochs=3, batch_size=64)
+        model_ann = train_pytorch_binary_classifier(
+            model_ann, X_f_tr, y_f_tr, epochs=3, batch_size=64
+        )
         p_val_ann = predict_pytorch_binary_classifier(model_ann, X_f_val)
         oof_ann[f_val_idx] = p_val_ann
         test_ann_preds.append(predict_pytorch_binary_classifier(model_ann, X_test_f))
 
         # 3. Genuine PyTorch Spatial BiLSTM Training
         model_rnn = SpatialBiLSTMClassifier(hidden_dim=32).to(DEVICE)
-        model_rnn = train_pytorch_binary_classifier(model_rnn, X_f_tr, y_f_tr, epochs=3, batch_size=64)
+        model_rnn = train_pytorch_binary_classifier(
+            model_rnn, X_f_tr, y_f_tr, epochs=3, batch_size=64
+        )
         p_val_rnn = predict_pytorch_binary_classifier(model_rnn, X_f_val)
         oof_rnn[f_val_idx] = p_val_rnn
         test_rnn_preds.append(predict_pytorch_binary_classifier(model_rnn, X_test_f))
 
         # 4. Genuine PyTorch Residual Conv2D CNN Training
         model_cnn = ResidualConv2DCNN().to(DEVICE)
-        model_cnn = train_pytorch_binary_classifier(model_cnn, X_f_tr, y_f_tr, epochs=3, batch_size=64)
+        model_cnn = train_pytorch_binary_classifier(
+            model_cnn, X_f_tr, y_f_tr, epochs=3, batch_size=64
+        )
         p_val_cnn = predict_pytorch_binary_classifier(model_cnn, X_f_val)
         oof_cnn[f_val_idx] = p_val_cnn
         test_cnn_preds.append(predict_pytorch_binary_classifier(model_cnn, X_test_f))
 
         # 5. Genuine PyTorch Vision Transformer (ViT) Training
         model_vit = VisionTransformerClassifier(embed_dim=32, depth=2, num_heads=2).to(DEVICE)
-        model_vit = train_pytorch_binary_classifier(model_vit, X_f_tr, y_f_tr, epochs=3, batch_size=64)
+        model_vit = train_pytorch_binary_classifier(
+            model_vit, X_f_tr, y_f_tr, epochs=3, batch_size=64
+        )
         p_val_vit = predict_pytorch_binary_classifier(model_vit, X_f_val)
         oof_vit[f_val_idx] = p_val_vit
         test_vit_preds.append(predict_pytorch_binary_classifier(model_vit, X_test_f))
@@ -264,31 +272,65 @@ def train_and_evaluate_all_models(sample_limit: int = 3000) -> Dict[str, Any]:
 
     # 5. Calculate Metrics for All 8 Architectures
     evaluations = [
-        {"Model Configuration": "Artificial Neural Network (ANN)", "Strategy": "Standard Split", "probs": p_test_ann},
-        {"Model Configuration": "Spatial BiLSTM (RNN)", "Strategy": "Sequential Row-Wise BiLSTM", "probs": p_test_rnn},
-        {"Model Configuration": "5-Fold Bagged Residual CNN", "Strategy": "5-Fold ResNet + In-Model Aug", "probs": p_test_cnn},
-        {"Model Configuration": "Vision Transformer (ViT)", "Strategy": "Patch-16 Multi-Head Self-Attention", "probs": p_test_vit},
-        {"Model Configuration": "Single-Fold XGBoost", "Strategy": "Identity-Disjoint Standard Split", "probs": p_test_xgb_single},
-        {"Model Configuration": "5-Fold Bagged XGBoost", "Strategy": "5-Fold Stratified Group Bagging", "probs": p_test_xgb_bagged},
-        {"Model Configuration": "5-Fold Ensemble (XGB+CNN+ViT)", "Strategy": "Multi-Architecture Probability Blending", "probs": p_test_ensemble},
-        {"Model Configuration": "5-Fold Ensemble + TTA", "Strategy": "Bagged Ensemble + Test-Time Augmentation", "probs": p_test_tta},
+        {
+            "Model Configuration": "Artificial Neural Network (ANN)",
+            "Strategy": "Standard Split",
+            "probs": p_test_ann,
+        },
+        {
+            "Model Configuration": "Spatial BiLSTM (RNN)",
+            "Strategy": "Sequential Row-Wise BiLSTM",
+            "probs": p_test_rnn,
+        },
+        {
+            "Model Configuration": "5-Fold Bagged Residual CNN",
+            "Strategy": "5-Fold ResNet + In-Model Aug",
+            "probs": p_test_cnn,
+        },
+        {
+            "Model Configuration": "Vision Transformer (ViT)",
+            "Strategy": "Patch-16 Multi-Head Self-Attention",
+            "probs": p_test_vit,
+        },
+        {
+            "Model Configuration": "Single-Fold XGBoost",
+            "Strategy": "Identity-Disjoint Standard Split",
+            "probs": p_test_xgb_single,
+        },
+        {
+            "Model Configuration": "5-Fold Bagged XGBoost",
+            "Strategy": "5-Fold Stratified Group Bagging",
+            "probs": p_test_xgb_bagged,
+        },
+        {
+            "Model Configuration": "5-Fold Ensemble (XGB+CNN+ViT)",
+            "Strategy": "Multi-Architecture Probability Blending",
+            "probs": p_test_ensemble,
+        },
+        {
+            "Model Configuration": "5-Fold Ensemble + TTA",
+            "Strategy": "Bagged Ensemble + Test-Time Augmentation",
+            "probs": p_test_tta,
+        },
     ]
 
     benchmark_rows = []
     for item in evaluations:
         m = compute_comprehensive_metrics(y_test, item["probs"])
-        benchmark_rows.append({
-            "Model Configuration": item["Model Configuration"],
-            "Strategy": item["Strategy"],
-            "Test Loss": m["Test Loss"],
-            "Accuracy": m["Accuracy"],
-            "Precision": m["Precision"],
-            "Recall": m["Recall"],
-            "F1-Score": m["F1-Score"],
-            "ROC-AUC": m["ROC-AUC"],
-            "PR-AUC": m["PR-AUC"],
-            "Confusion Matrix": json.dumps(m["Confusion Matrix"]),
-        })
+        benchmark_rows.append(
+            {
+                "Model Configuration": item["Model Configuration"],
+                "Strategy": item["Strategy"],
+                "Test Loss": m["Test Loss"],
+                "Accuracy": m["Accuracy"],
+                "Precision": m["Precision"],
+                "Recall": m["Recall"],
+                "F1-Score": m["F1-Score"],
+                "ROC-AUC": m["ROC-AUC"],
+                "PR-AUC": m["PR-AUC"],
+                "Confusion Matrix": json.dumps(m["Confusion Matrix"]),
+            }
+        )
 
     elapsed_time = round(time.perf_counter() - start_time, 2)
 
@@ -298,10 +340,26 @@ def train_and_evaluate_all_models(sample_limit: int = 3000) -> Dict[str, Any]:
 
     X_train_scaled = (X_train - mean_full_train) / std_full_train
 
-    prod_cnn = train_pytorch_binary_classifier(ResidualConv2DCNN().to(DEVICE), X_train_scaled, y_train, epochs=4, batch_size=64)
-    prod_vit = train_pytorch_binary_classifier(VisionTransformerClassifier(embed_dim=32, depth=2, num_heads=2).to(DEVICE), X_train_scaled, y_train, epochs=4, batch_size=64)
-    prod_ann = train_pytorch_binary_classifier(ANNClassifier(input_dim=39).to(DEVICE), X_train_scaled, y_train, epochs=4, batch_size=64)
-    prod_rnn = train_pytorch_binary_classifier(SpatialBiLSTMClassifier(hidden_dim=32).to(DEVICE), X_train_scaled, y_train, epochs=4, batch_size=64)
+    prod_cnn = train_pytorch_binary_classifier(
+        ResidualConv2DCNN().to(DEVICE), X_train_scaled, y_train, epochs=4, batch_size=64
+    )
+    prod_vit = train_pytorch_binary_classifier(
+        VisionTransformerClassifier(embed_dim=32, depth=2, num_heads=2).to(DEVICE),
+        X_train_scaled,
+        y_train,
+        epochs=4,
+        batch_size=64,
+    )
+    prod_ann = train_pytorch_binary_classifier(
+        ANNClassifier(input_dim=39).to(DEVICE), X_train_scaled, y_train, epochs=4, batch_size=64
+    )
+    prod_rnn = train_pytorch_binary_classifier(
+        SpatialBiLSTMClassifier(hidden_dim=32).to(DEVICE),
+        X_train_scaled,
+        y_train,
+        epochs=4,
+        batch_size=64,
+    )
 
     torch.save(prod_cnn.state_dict(), checkpoints_dir / "residual_cnn.pt")
     torch.save(prod_vit.state_dict(), checkpoints_dir / "vision_transformer.pt")
@@ -321,7 +379,17 @@ def train_and_evaluate_all_models(sample_limit: int = 3000) -> Dict[str, Any]:
         df_bench.to_csv(prod_csv, index=False)
         # Update canonical public reference
         reports_dir = PROJECT_ROOT / "reports"
-        df_bench_pub = df_bench[["Model Configuration", "Strategy", "Test Loss", "Accuracy", "Precision", "Recall", "F1-Score"]]
+        df_bench_pub = df_bench[
+            [
+                "Model Configuration",
+                "Strategy",
+                "Test Loss",
+                "Accuracy",
+                "Precision",
+                "Recall",
+                "F1-Score",
+            ]
+        ]
         df_bench_pub.to_csv(reports_dir / "model_benchmark_results.csv", index=False)
         df_bench.to_csv(reports_dir / "model_benchmark_detailed.csv", index=False)
 
@@ -341,6 +409,6 @@ if __name__ == "__main__":
     res = train_and_evaluate_all_models(sample_limit=3000)
     print("Execution complete. Benchmark summary:")
     for r in res["results"]:
-        acc_str = str(r['Accuracy'])
-        f1_val = float(r['F1-Score'])
+        acc_str = str(r["Accuracy"])
+        f1_val = float(r["F1-Score"])
         print(f"  • {r['Model Configuration']}: Accuracy={acc_str}, F1={f1_val:.4f}")

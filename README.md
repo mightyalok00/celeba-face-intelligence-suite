@@ -382,8 +382,13 @@ The primary intelligent facial reasoning application powered by Google AI Studio
 
 ### 3. Interactive Jupyter Notebooks
 
-Open any of the primary notebooks in Jupyter Notebook, JupyterLab, or VS Code:
+All Python pipelines and modules have corresponding interactive, fully-commented `.ipynb` notebooks:
 
+* **[notebooks/ai_studio/gemini_multimodal_face_analyzer.ipynb](file:///d:/scan/notebooks/ai_studio/gemini_multimodal_face_analyzer.ipynb)**: Google AI Studio multimodal Gemini facial attribute reasoning, structured JSON schemas, and local PyTorch cross-validation.
+* **[notebooks/ai_studio/google_ai_studio_interactive_app.ipynb](file:///d:/scan/notebooks/ai_studio/google_ai_studio_interactive_app.ipynb)**: Interactive application notebook demonstrating batch hybrid multimodal face analysis.
+* **[notebooks/database/database_connection_and_pooling.ipynb](file:///d:/scan/notebooks/database/database_connection_and_pooling.ipynb)**: MySQL thread-safe connection pooling, ping-on-acquire liveness validation, and parameterized SQL query execution.
+* **[notebooks/evaluation/fairness_and_identity_leakage_audit.ipynb](file:///d:/scan/notebooks/evaluation/fairness_and_identity_leakage_audit.ipynb)**: Zero identity leakage verification ($0.0\%$ overlap) and EEOC 4/5ths disparate impact ratio audit.
+* **[notebooks/training/classical_baselines_and_ensembling.ipynb](file:///d:/scan/notebooks/training/classical_baselines_and_ensembling.ipynb)**: Classical ML baselines (Logistic Regression, ExtraTrees, XGBoost), SLSQP out-of-fold probability blending, and 5-view TTA.
 * **[notebooks/main.ipynb](file:///d:/scan/notebooks/main.ipynb)**: Primary pipeline notebook with exploratory data analysis, MySQL queries, and baseline models.
 * **[notebooks/train_classifiers.ipynb](file:///d:/scan/notebooks/train_classifiers.ipynb)**: 5-Fold Stratified Cross-Validation benchmark and ensembling suite.
 * **[notebooks/face_embedding_and_clustering.ipynb](file:///d:/scan/notebooks/face_embedding_and_clustering.ipynb)**: Google Photos style 128-D face embeddings, cosine similarity search, and unsupervised DBSCAN/K-Means clustering.

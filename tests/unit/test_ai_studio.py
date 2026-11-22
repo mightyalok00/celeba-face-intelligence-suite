@@ -44,8 +44,17 @@ def test_gemini_studio_live_mock_response():
     """Verify parsing and structure when Gemini API returns valid JSON."""
     mock_payload = {
         "expression": {"is_smiling": True, "confidence": 0.95, "primary_emotion": "Smiling"},
-        "demographics": {"apparent_age_group": "Young", "apparent_gender": "Female", "confidence": 0.90},
-        "facial_attributes": {"hair_color": "Blond", "wearing_eyeglasses": False, "facial_hair": False, "notable_features": []},
+        "demographics": {
+            "apparent_age_group": "Young",
+            "apparent_gender": "Female",
+            "confidence": 0.90,
+        },
+        "facial_attributes": {
+            "hair_color": "Blond",
+            "wearing_eyeglasses": False,
+            "facial_hair": False,
+            "notable_features": [],
+        },
         "reasoning_summary": "Mocked test rationale.",
     }
 
@@ -54,6 +63,7 @@ def test_gemini_studio_live_mock_response():
     studio.model = MagicMock()
     mock_response = MagicMock()
     import json
+
     mock_response.text = json.dumps(mock_payload)
     studio.model.generate_content.return_value = mock_response
 

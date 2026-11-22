@@ -13,6 +13,7 @@ class SpatialBiLSTMClassifier(nn.Module):
     Bidirectional LSTM operating on spatial image row slices.
     Input shape: (Batch, 3, 64, 64) -> Transposed to (Batch, 64, 192) -> BiLSTM -> Linear.
     """
+
     def __init__(
         self,
         img_size: int = 64,
@@ -48,10 +49,20 @@ class SpatialBiLSTMClassifier(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Executes bidirectional sequence modeling across spatial image row transitions.
+
+        Args:
+            x: Tensor of shape (B, 3, 64, 64) for images, or (B, 39) for attribute vectors.
+
+        Returns:
+            torch.Tensor: Binary logits of shape (B, num_classes).
+        """
+        # Step 1: If input is tabular metadata (B, 39), project and reshape to (B, 3, 64, 64)
         if x.dim() == 2 and x.shape[1] == 39:
             x = self.feat_adapter(x).view(-1, 3, 64, 64)
 
-        # Check input shape: if (B, C, H, W), convert to (B, H, W * C)
+        # Step 2: Slice horizontal rows into sequential time steps: (B, H, W * C) -> (B, 64, 192)
         if x.dim() == 4:
             B, C, H, W = x.shape
             x = x.permute(0, 2, 3, 1).contiguous().view(B, H, W * C)
@@ -60,8 +71,10 @@ class SpatialBiLSTMClassifier(nn.Module):
             B = x.shape[0]
             x = x.view(B, self.img_size, -1)
 
+        # Step 3: BiLSTM recurrent pass capturing both top-to-bottom and bottom-to-top dependencies
         lstm_out, _ = self.bilstm(x)
-        # Average pooling across sequence length or take last hidden state
+
+        # Step 4: Temporal average pooling across the 64 spatial time steps
         pooled = torch.mean(lstm_out, dim=1)
         return self.fc(pooled)
 

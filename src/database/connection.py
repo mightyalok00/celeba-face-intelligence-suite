@@ -21,6 +21,7 @@ class ConnectionPool:
     """
     Thread-safe connection pool with connection validation and auto-reconnect.
     """
+
     def __init__(self, max_connections: int = 5) -> None:
         self.max_connections = max_connections
         self._pool: List[pymysql.Connection] = []

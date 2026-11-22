@@ -14,6 +14,7 @@ from sklearn.model_selection import StratifiedGroupKFold
 XGBClassifier: Any = None
 try:
     from xgboost import XGBClassifier as _RealXGBClassifier
+
     XGBClassifier = _RealXGBClassifier
 except ImportError:
     XGBClassifier = None
@@ -32,9 +33,7 @@ def train_extra_trees(
     X_train: np.ndarray, y_train: np.ndarray, n_estimators: int = 100
 ) -> ExtraTreesClassifier:
     """Trains ExtraTrees (Extremely Randomized Trees) ensemble baseline."""
-    clf = ExtraTreesClassifier(
-        n_estimators=n_estimators, max_depth=12, random_state=42, n_jobs=-1
-    )
+    clf = ExtraTreesClassifier(n_estimators=n_estimators, max_depth=12, random_state=42, n_jobs=-1)
     clf.fit(X_train, y_train)
     return clf
 
@@ -50,9 +49,7 @@ def train_hist_gradient_boosting(
     return clf
 
 
-def train_single_fold_xgboost(
-    X_train: np.ndarray, y_train: np.ndarray
-) -> Any:
+def train_single_fold_xgboost(X_train: np.ndarray, y_train: np.ndarray) -> Any:
     """Trains Single-Fold Gradient Boosted Decision Tree (XGBoost)."""
     if XGBClassifier is not None:
         clf = XGBClassifier(

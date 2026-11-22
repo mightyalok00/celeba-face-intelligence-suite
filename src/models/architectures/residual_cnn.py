@@ -14,6 +14,7 @@ class ResidualBlock(nn.Module):
     """
     Standard 2D Residual Block with identity shortcut or 1x1 projection.
     """
+
     def __init__(self, in_channels: int, out_channels: int, stride: int = 1) -> None:
         super().__init__()
         self.conv1 = nn.Conv2d(
@@ -50,6 +51,7 @@ class ResidualConv2DCNN(nn.Module):
     4-Stage Residual CNN designed for 64x64 CelebA facial images.
     Input shape: (Batch, 3, 64, 64) -> Output: (Batch, num_classes) logits.
     """
+
     def __init__(self, num_classes: int = 1, dropout: float = 0.2) -> None:
         super().__init__()
         self.in_channels = 32
@@ -83,14 +85,30 @@ class ResidualConv2DCNN(nn.Module):
         return nn.Sequential(layer)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Executes residual CNN forward pass with dual-mode support for images and metadata.
+
+        Args:
+            x: Tensor of shape (B, 3, 64, 64) for images, or (B, 39) for attribute vectors.
+
+        Returns:
+            torch.Tensor: Logits of shape (B, num_classes).
+        """
+        # Step 1: If input is tabular metadata (B, 39), project and reshape to (B, 3, 64, 64)
         if x.dim() == 2 and x.shape[1] == 39:
             x = self.feat_adapter(x).view(-1, 3, 64, 64)
+
+        # Step 2: Stem convolution (3 -> 32 channels)
         out = self.stem(x)
-        out = self.stage1(out)
-        out = self.stage2(out)
-        out = self.stage3(out)
-        out = self.stage4(out)
-        out = self.pool(out)
+
+        # Step 3: Four hierarchical residual stages capturing fine-to-coarse features
+        out = self.stage1(out)  # 32 channels, 64x64 spatial resolution
+        out = self.stage2(out)  # 64 channels, 32x32 spatial resolution
+        out = self.stage3(out)  # 128 channels, 16x16 spatial resolution
+        out = self.stage4(out)  # 256 channels, 8x8 spatial resolution
+
+        # Step 4: Global spatial pooling, regularization, and classification projection
+        out = self.pool(out)  # Condense 8x8 spatial grid into (B, 256, 1, 1)
         out = torch.flatten(out, 1)
         out = self.dropout(out)
         return self.fc(out)

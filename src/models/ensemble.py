@@ -11,9 +11,7 @@ from scipy.optimize import minimize  # type: ignore
 from sklearn.metrics import log_loss
 
 
-def optimize_ensemble_weights(
-    oof_predictions: List[np.ndarray], y_true: np.ndarray
-) -> np.ndarray:
+def optimize_ensemble_weights(oof_predictions: List[np.ndarray], y_true: np.ndarray) -> np.ndarray:
     """
     Finds optimal convex combination weights w_i >= 0, sum(w_i) = 1.0
     to minimize binary cross-entropy (log loss) on Out-Of-Fold (OOF) validation data.
@@ -47,9 +45,7 @@ def optimize_ensemble_weights(
     return weights
 
 
-def blend_predictions(
-    predictions: List[np.ndarray], weights: np.ndarray
-) -> np.ndarray:
+def blend_predictions(predictions: List[np.ndarray], weights: np.ndarray) -> np.ndarray:
     """Blends multiple model probability vectors using optimal weights."""
     assert len(predictions) == len(weights)
     blend = sum(weights[i] * predictions[i] for i in range(len(weights)))

@@ -24,7 +24,10 @@ except ImportError:
 # 0. DIRECTORY RESOLUTION (Resolves project root whether launched from app/ or root)
 # ------------------------------------------------------------------------------
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(CURRENT_DIR) if os.path.basename(CURRENT_DIR) == 'app' else CURRENT_DIR
+PROJECT_ROOT = (
+    os.path.dirname(CURRENT_DIR) if os.path.basename(CURRENT_DIR) == "app" else CURRENT_DIR
+)
+
 
 # ------------------------------------------------------------------------------
 # 2. DATA CACHING & FAST LOADERS
@@ -37,12 +40,14 @@ def load_gallery_data():
             return json.load(f)
     return []
 
+
 @st.cache_data
 def load_benchmark_metrics():
     csv_path = os.path.join(PROJECT_ROOT, "reports", "model_benchmark_results.csv")
     if os.path.exists(csv_path):
         return pd.read_csv(csv_path)
     return None
+
 
 def query_mysql(sql, params=None):
     """
@@ -51,6 +56,7 @@ def query_mysql(sql, params=None):
     and returns a pandas DataFrame along with any error message.
     """
     from src.database.connection import execute_parameterized_query
+
     results, err = execute_parameterized_query(sql, params)
     if results is not None:
         return pd.DataFrame(results), None
@@ -70,11 +76,8 @@ def execute_mcp_face_identification(image_id):
         "method": "tools/call",
         "params": {
             "name": "mysql_identify_face",
-            "arguments": {
-                "image_id": clean_id,
-                "database": "celeba_db"
-            }
-        }
+            "arguments": {"image_id": clean_id, "database": "celeba_db"},
+        },
     }
 
     start_time = time.perf_counter()
@@ -144,11 +147,11 @@ def execute_mcp_face_identification(image_id):
                         "total_photos": 30,
                         "confidence": m.get("confidence", {}).get("young", 0.98),
                         "is_fallback": True,
-                        "source": "Curated Ground-Truth Reference (Database Offline - Not Live Model Inference)"
+                        "source": "Curated Ground-Truth Reference (Database Offline - Not Live Model Inference)",
                     },
                     "source": "Curated Ground-Truth Reference (Database Offline - Not Live Model Inference)",
-                    "executionTimeMs": exec_ms
-                }
+                    "executionTimeMs": exec_ms,
+                },
             }
             return mcp_request, mcp_response, mcp_response["result"]["structured"]
         else:
@@ -158,8 +161,8 @@ def execute_mcp_face_identification(image_id):
                 "error": {
                     "code": -32602,
                     "message": f"Image ID {clean_id} not found in celeba_db or gallery index",
-                    "details": err
-                }
+                    "details": err,
+                },
             }
             return mcp_request, mcp_response, None
 
@@ -191,7 +194,7 @@ def execute_mcp_face_identification(image_id):
         "total_photos": row["total_photos_of_person"],
         "confidence": 0.987,
         "is_fallback": False,
-        "source": "Live MySQL Database (celeba_db)"
+        "source": "Live MySQL Database (celeba_db)",
     }
     mcp_response = {
         "jsonrpc": "2.0",
@@ -200,10 +203,11 @@ def execute_mcp_face_identification(image_id):
             "content": [{"type": "text", "text": formatted_table}],
             "structured": structured_data,
             "source": "Live MySQL Database (celeba_db)",
-            "executionTimeMs": exec_ms
-        }
+            "executionTimeMs": exec_ms,
+        },
     }
     return mcp_request, mcp_response, structured_data
+
 
 # ------------------------------------------------------------------------------
 # MAIN UI DASHBOARD ENTRYPOINT
@@ -217,11 +221,12 @@ def main():
         page_title="CelebA Face AI & Intelligence Suite",
         page_icon="⚡",
         layout="wide",
-        initial_sidebar_state="expanded"
+        initial_sidebar_state="expanded",
     )
 
     # Custom CSS: Modern Dark Glassmorphism, Animated Motion Sliders, Calligraphy
-    st.markdown("""
+    st.markdown(
+        """
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Dancing+Script:wght@600;700&family=Great+Vibes&display=swap" rel="stylesheet">
@@ -579,14 +584,15 @@ def main():
             color: #64748b;
         }
     </style>
-    """, unsafe_allow_html=True)
-
-
+    """,
+        unsafe_allow_html=True,
+    )
 
     # ------------------------------------------------------------------------------
     # 4. TOP HERO BANNER & TELEMETRY
     # ------------------------------------------------------------------------------
-    st.markdown("""
+    st.markdown(
+        """
     <div class="hero-banner">
         <div class="hero-title">CelebA Face AI & Intelligence Suite</div>
         <div class="hero-subtitle">
@@ -611,8 +617,9 @@ def main():
             </div>
         </div>
     </div>
-    """, unsafe_allow_html=True)
-
+    """,
+        unsafe_allow_html=True,
+    )
 
     # ------------------------------------------------------------------------------
     # 5. LIVE ANIMATED MOTION FACE SHOWCASE SLIDER
@@ -642,7 +649,8 @@ def main():
         # Double the cards for an infinite continuous loop
         full_track_html = cards_html + cards_html
 
-        st.markdown(f"""
+        st.markdown(
+            f"""
         <div class="motion-slider-wrapper">
             <div class="motion-slider-header">
                 <div class="motion-badge">
@@ -659,18 +667,22 @@ def main():
                 </div>
             </div>
         </div>
-        """, unsafe_allow_html=True)
-
+        """,
+            unsafe_allow_html=True,
+        )
 
     # ------------------------------------------------------------------------------
     # 6. SIDEBAR NAVIGATION
     # ------------------------------------------------------------------------------
-    st.sidebar.markdown("""
+    st.sidebar.markdown(
+        """
     <div style="padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 16px;">
         <h3 style="margin: 0; color: #f3f4f6; font-size: 1.15rem;">Control Panel</h3>
         <p style="margin: 4px 0 0 0; color: #94a3b8; font-size: 0.8rem;">Select Application Module</p>
     </div>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
     # Global Quick Run Workflow Trigger in Sidebar
     if st.sidebar.button("▶️ Run Pipeline Workflow Suite", type="primary", use_container_width=True):
@@ -684,20 +696,17 @@ def main():
         "🔄 Pipeline Workflow & Automation",
         "⚡ MCP Protocol Diagnostics",
         "📊 Model Benchmarks & Metrics",
-        "🗄️ MySQL Database Console"
+        "🗄️ MySQL Database Console",
     ]
     if st.session_state.get("nav_mode_override") in modules_list:
         default_idx = modules_list.index(st.session_state["nav_mode_override"])
         st.session_state["nav_mode_override"] = None
 
-    app_mode = st.sidebar.radio(
-        "Modules:",
-        modules_list,
-        index=default_idx
-    )
+    app_mode = st.sidebar.radio("Modules:", modules_list, index=default_idx)
 
     # Audited Quality Scores Widget in Sidebar
-    st.sidebar.markdown("""
+    st.sidebar.markdown(
+        """
     <div style="margin: 12px 0; padding: 10px 12px; background: rgba(30, 41, 59, 0.6); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 8px;">
         <div style="font-size: 0.72rem; color: #818cf8; font-weight: 700; text-transform: uppercase;">System Quality Scores</div>
         <div style="display: flex; justify-content: space-between; font-size: 0.78rem; margin-top: 4px; color: #cbd5e1;">
@@ -710,7 +719,9 @@ def main():
             <span>Deployment Readiness:</span><strong style="color: #34d399;">10.0 / 10</strong>
         </div>
     </div>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
     st.sidebar.markdown("---")
 
@@ -721,24 +732,29 @@ def main():
         max_value=60,
         value=28,
         step=2,
-        help="Controls the horizontal animation loop duration. Lower values increase motion speed."
+        help="Controls the horizontal animation loop duration. Lower values increase motion speed.",
     )
-    st.markdown(f"""
+    st.markdown(
+        f"""
     <style>
         .motion-slider-track {{
             animation-duration: {slider_speed}s !important;
         }}
     </style>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
-    st.sidebar.markdown("""
+    st.sidebar.markdown(
+        """
     <div style="background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08); margin-top: 14px;">
         <div style="font-size: 0.78rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px;">Engine Status</div>
         <div style="font-size: 0.85rem; color: #10b981; font-weight: 600; margin-top: 4px;">● MySQL 8.0 Daemon Online</div>
         <div style="font-size: 0.85rem; color: #38bdf8; font-weight: 600; margin-top: 2px;">● MCP JSON-RPC 2.0 Ready</div>
     </div>
-    """, unsafe_allow_html=True)
-
+    """,
+        unsafe_allow_html=True,
+    )
 
     # ------------------------------------------------------------------------------
     # 7. VIEW 1: AUTO-DETECT & LIVE MCP (WORKING MCP BUTTON & ANIMATED SLIDER)
@@ -759,17 +775,20 @@ def main():
                 max_value=99,
                 value=85,
                 step=1,
-                help="Minimum cosine similarity and neural embedding confidence required to confirm identity ground truth."
+                help="Minimum cosine similarity and neural embedding confidence required to confirm identity ground truth.",
             )
         with col_stat:
-            st.markdown(f"""
+            st.markdown(
+                f"""
             <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 10px; padding: 10px 14px; margin-top: 4px;">
                 <div style="font-size: 0.75rem; color: #94a3b8; text-transform: uppercase;">Sensitivity Mode</div>
-                <div style="font-size: 1.1rem; font-weight: 700; color: {'#10b981' if mcp_threshold >= 80 else '#f59e0b'};">
-                    {mcp_threshold}% Threshold ({'Strict & Verified' if mcp_threshold >= 85 else 'Permissive Mode'})
+                <div style="font-size: 1.1rem; font-weight: 700; color: {"#10b981" if mcp_threshold >= 80 else "#f59e0b"};">
+                    {mcp_threshold}% Threshold ({"Strict & Verified" if mcp_threshold >= 85 else "Permissive Mode"})
                 </div>
             </div>
-            """, unsafe_allow_html=True)
+            """,
+                unsafe_allow_html=True,
+            )
 
         col_ctrl, col_preview = st.columns([1.1, 0.9])
 
@@ -782,12 +801,14 @@ def main():
                 "002279.png (Cluster 4 - Identity #3745)",
                 "006829.png (Cluster 5 - Identity #3699)",
                 "005950.png (Cluster 6 - Sophia Bush #8968)",
-                "003498.png (Identity #973)"
+                "003498.png (Identity #973)",
             ]
             chosen_sample = st.selectbox("Choose a Sample Face Photo:", sample_options)
             sample_filename = chosen_sample.split()[0]
 
-            uploaded_file = st.file_uploader("Or Upload Custom Face Image:", type=["jpg", "png", "jpeg"])
+            uploaded_file = st.file_uploader(
+                "Or Upload Custom Face Image:", type=["jpg", "png", "jpeg"]
+            )
 
             target_image = None
             target_name = sample_filename
@@ -805,16 +826,22 @@ def main():
                         target_image = Image.open(match.iloc[0]["path"])
 
             st.markdown("<br>", unsafe_allow_html=True)
-            run_mcp = st.button("⚡ Run MCP Auto-Detection Pipeline", type="primary", use_container_width=True)
+            run_mcp = st.button(
+                "⚡ Run MCP Auto-Detection Pipeline", type="primary", use_container_width=True
+            )
 
         with col_preview:
             if target_image:
-                st.image(target_image, caption=f"Target Input: {target_name}", use_container_width=True)
+                st.image(
+                    target_image, caption=f"Target Input: {target_name}", use_container_width=True
+                )
 
         # Trigger MCP Processing
         if run_mcp or "mcp_last_detected" in st.session_state:
             if run_mcp:
-                with st.spinner("Dispatching Model Context Protocol (JSON-RPC 2.0) call to celeba-mysql-mcp..."):
+                with st.spinner(
+                    "Dispatching Model Context Protocol (JSON-RPC 2.0) call to celeba-mysql-mcp..."
+                ):
                     time.sleep(0.3)
                     mcp_req, mcp_resp, structured = execute_mcp_face_identification(target_name)
                     st.session_state["mcp_last_req"] = mcp_req
@@ -829,60 +856,92 @@ def main():
             if isinstance(data, dict):
                 st.markdown("---")
                 if data.get("is_fallback"):
-                    st.warning("⚠️ **Notice: Displaying Curated Ground-Truth Reference Lookup (Database Offline)**. This is pre-indexed reference metadata, not live model inference.")
+                    st.warning(
+                        "⚠️ **Notice: Displaying Curated Ground-Truth Reference Lookup (Database Offline)**. This is pre-indexed reference metadata, not live model inference."
+                    )
 
                 conf_val = float(data.get("confidence", 0.987))
                 passed_threshold = (conf_val * 100) >= mcp_threshold
 
-                chip_text = "⚠️ CURATED FALLBACK (DB OFFLINE)" if data.get("is_fallback") else ("✓ LIVE DATABASE MATCH" if passed_threshold else "⚠️ BELOW SENSITIVITY CUTOFF")
-                chip_class = "chip-amber" if data.get("is_fallback") else ("chip-success" if passed_threshold else "chip-cyan")
+                chip_text = (
+                    "⚠️ CURATED FALLBACK (DB OFFLINE)"
+                    if data.get("is_fallback")
+                    else (
+                        "✓ LIVE DATABASE MATCH"
+                        if passed_threshold
+                        else "⚠️ BELOW SENSITIVITY CUTOFF"
+                    )
+                )
+                chip_class = (
+                    "chip-amber"
+                    if data.get("is_fallback")
+                    else ("chip-success" if passed_threshold else "chip-cyan")
+                )
 
-                st.markdown(f"""
+                st.markdown(
+                    f"""
                 <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <h4 style="margin: 0;">🎯 Auto-Detection Result: <strong>{data['person_name']}</strong></h4>
+                    <h4 style="margin: 0;">🎯 Auto-Detection Result: <strong>{data["person_name"]}</strong></h4>
                     <span class="chip {chip_class}" style="font-size: 0.85rem; padding: 5px 12px;">
                         {chip_text}
                     </span>
                 </div>
-                """, unsafe_allow_html=True)
+                """,
+                    unsafe_allow_html=True,
+                )
 
                 # Trending Glass Metric Grid
                 m1, m2, m3, m4, m5 = st.columns(5)
                 with m1:
-                    st.markdown(f"""
+                    st.markdown(
+                        f"""
                     <div class="metric-badge-card">
-                        <div class="metric-badge-value">#{data['identity_cluster_id']}</div>
+                        <div class="metric-badge-value">#{data["identity_cluster_id"]}</div>
                         <div class="metric-badge-label">Cluster ID</div>
                     </div>
-                    """, unsafe_allow_html=True)
+                    """,
+                        unsafe_allow_html=True,
+                    )
                 with m2:
-                    st.markdown(f"""
+                    st.markdown(
+                        f"""
                     <div class="metric-badge-card">
-                        <div class="metric-badge-value">{data['gender']}</div>
+                        <div class="metric-badge-value">{data["gender"]}</div>
                         <div class="metric-badge-label">Gender</div>
                     </div>
-                    """, unsafe_allow_html=True)
+                    """,
+                        unsafe_allow_html=True,
+                    )
                 with m3:
-                    st.markdown(f"""
+                    st.markdown(
+                        f"""
                     <div class="metric-badge-card">
-                        <div class="metric-badge-value">{data['expression']}</div>
+                        <div class="metric-badge-value">{data["expression"]}</div>
                         <div class="metric-badge-label">Expression</div>
                     </div>
-                    """, unsafe_allow_html=True)
+                    """,
+                        unsafe_allow_html=True,
+                    )
                 with m4:
-                    st.markdown(f"""
+                    st.markdown(
+                        f"""
                     <div class="metric-badge-card">
-                        <div class="metric-badge-value">{data['age_group']}</div>
+                        <div class="metric-badge-value">{data["age_group"]}</div>
                         <div class="metric-badge-label">Age Group</div>
                     </div>
-                    """, unsafe_allow_html=True)
+                    """,
+                        unsafe_allow_html=True,
+                    )
                 with m5:
-                    st.markdown(f"""
+                    st.markdown(
+                        f"""
                     <div class="metric-badge-card">
-                        <div class="metric-badge-value">{data['total_photos']}</div>
+                        <div class="metric-badge-value">{data["total_photos"]}</div>
                         <div class="metric-badge-label">Photos in DB</div>
                     </div>
-                    """, unsafe_allow_html=True)
+                    """,
+                        unsafe_allow_html=True,
+                    )
 
                 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -892,23 +951,27 @@ def main():
                     st.markdown("##### Extracted Facial Attributes:")
                     chips_html = f"""
                     <div>
-                        <span class="chip chip-success">✓ Eyeglasses: {data['eyeglasses']}</span>
-                        <span class="chip chip-cyan">Hair: {data.get('hair_type', 'Styled')}</span>
-                        <span class="chip">Demographic: {data['gender']} ({data['age_group']})</span>
-                        <span class="chip">Expression: {data['expression']}</span>
+                        <span class="chip chip-success">✓ Eyeglasses: {data["eyeglasses"]}</span>
+                        <span class="chip chip-cyan">Hair: {data.get("hair_type", "Styled")}</span>
+                        <span class="chip">Demographic: {data["gender"]} ({data["age_group"]})</span>
+                        <span class="chip">Expression: {data["expression"]}</span>
                         <span class="chip chip-success">Verified Ground Truth</span>
                     </div>
                     """
                     st.markdown(chips_html, unsafe_allow_html=True)
 
                 with badge_cols2:
-                    st.markdown(f"##### Database Record Match: **{conf_val * 100:.1f}%** (Ground-Truth Lookup Score)")
+                    st.markdown(
+                        f"##### Database Record Match: **{conf_val * 100:.1f}%** (Ground-Truth Lookup Score)"
+                    )
                     st.progress(conf_val)
 
                 # Real-Time PyTorch Neural Model Inference Section
                 st.markdown("---")
                 st.markdown("#### 🧠 Live Neural Model Inference (PyTorch DL + TTA)")
-                st.caption("Executes real-time forward pass with genuine tensor transformations (never synthetic or fixed lookup probabilities).")
+                st.caption(
+                    "Executes real-time forward pass with genuine tensor transformations (never synthetic or fixed lookup probabilities)."
+                )
 
                 inf_col1, inf_col2, inf_col3 = st.columns([1.5, 1, 1])
                 with inf_col1:
@@ -918,7 +981,9 @@ def main():
                         key="live_inf_arch",
                     )
                 with inf_col2:
-                    use_tta_choice = st.checkbox("Enable Test-Time Augmentation (TTA)", value=True, key="live_inf_tta")
+                    use_tta_choice = st.checkbox(
+                        "Enable Test-Time Augmentation (TTA)", value=True, key="live_inf_tta"
+                    )
                 with inf_col3:
                     st.write("")
                     run_inf_btn = st.button("⚡ Run Neural Inference", key="live_inf_btn")
@@ -926,17 +991,28 @@ def main():
                 if run_inf_btn:
                     with st.spinner(f"Executing forward pass on {chosen_arch}..."):
                         from src.models.inference import ModelInferenceEngine
+
                         engine = ModelInferenceEngine()
                         inf_input = target_image if target_image is not None else target_name
-                        inf_res = engine.predict_attribute(inf_input, architecture=chosen_arch, use_tta=use_tta_choice)
+                        inf_res = engine.predict_attribute(
+                            inf_input, architecture=chosen_arch, use_tta=use_tta_choice
+                        )
                         pred_label = "Smiling" if inf_res["prediction"] == 1 else "Neutral"
-                        st.success(f"**Neural Inference Complete**: {chosen_arch} predicted **{pred_label}** with **{inf_res['confidence'] * 100:.1f}%** genuine confidence (Raw P={inf_res['probability']:.4f}).")
-                        with st.expander("🔬 View Model Inference Tensor Telemetry", expanded=False):
+                        st.success(
+                            f"**Neural Inference Complete**: {chosen_arch} predicted **{pred_label}** with **{inf_res['confidence'] * 100:.1f}%** genuine confidence (Raw P={inf_res['probability']:.4f})."
+                        )
+                        with st.expander(
+                            "🔬 View Model Inference Tensor Telemetry", expanded=False
+                        ):
                             st.json(inf_res)
 
                 # JSON-RPC Protocol Live Drawer
-                with st.expander("🛠️ View Raw MCP JSON-RPC 2.0 Payload & Server Logs", expanded=False):
-                    tab_req, tab_resp, tab_ascii = st.tabs(["JSON-RPC Request", "JSON-RPC Response", "ASCII Terminal"])
+                with st.expander(
+                    "🛠️ View Raw MCP JSON-RPC 2.0 Payload & Server Logs", expanded=False
+                ):
+                    tab_req, tab_resp, tab_ascii = st.tabs(
+                        ["JSON-RPC Request", "JSON-RPC Response", "ASCII Terminal"]
+                    )
                     with tab_req:
                         st.json(mcp_req)
                     with tab_resp:
@@ -967,19 +1043,24 @@ def main():
                         with rel_cols[idx]:
                             r_path = os.path.join(PROJECT_ROOT, "img_align_celeba", r["image_id"])
                             if not os.path.exists(r_path):
-                                r_path = os.path.join(PROJECT_ROOT, "img_align_celeba", r["image_id"].replace(".jpg", ".png"))
+                                r_path = os.path.join(
+                                    PROJECT_ROOT,
+                                    "img_align_celeba",
+                                    r["image_id"].replace(".jpg", ".png"),
+                                )
                             if os.path.exists(r_path):
                                 st.image(r_path, caption=r["image_id"], use_container_width=True)
                             else:
                                 st.caption(f"ID: {r['image_id']}")
-
 
     # ------------------------------------------------------------------------------
     # 8. VIEW 2: ATTRIBUTE EXPLORER & PRESETS (EXPANDED FILTERS & ANIMATED SLIDERS)
     # ------------------------------------------------------------------------------
     elif app_mode == "🎨 Attribute Explorer & Presets":
         st.markdown("### 🎨 Interactive Facial Attribute Explorer & Quick Presets")
-        st.write("Browse, filter, and discover faces using trending preset combination buttons, granular sliders, and attribute filters:")
+        st.write(
+            "Browse, filter, and discover faces using trending preset combination buttons, granular sliders, and attribute filters:"
+        )
 
         # Initialize Session State for Filter Presets
         if "f_gender" not in st.session_state:
@@ -1080,7 +1161,7 @@ def main():
                 max_value=98,
                 value=70,
                 step=1,
-                help="Filters faces whose neural classifier confidence meets or exceeds this threshold."
+                help="Filters faces whose neural classifier confidence meets or exceeds this threshold.",
             )
         with sl_col2:
             display_limit = st.slider(
@@ -1089,7 +1170,7 @@ def main():
                 max_value=72,
                 value=24,
                 step=6,
-                help="Adjust the batch size of faces rendered in the interactive image grid."
+                help="Adjust the batch size of faces rendered in the interactive image grid.",
             )
 
         # EXPANDED GRANULAR FILTER CONTROLS
@@ -1097,50 +1178,99 @@ def main():
             fcol1, fcol2, fcol3, fcol4 = st.columns(4)
             with fcol1:
                 gender_opts = ["All", "Female", "Male"]
-                g_idx = gender_opts.index(st.session_state["f_gender"]) if st.session_state["f_gender"] in gender_opts else 0
+                g_idx = (
+                    gender_opts.index(st.session_state["f_gender"])
+                    if st.session_state["f_gender"] in gender_opts
+                    else 0
+                )
                 sel_gender = st.selectbox("Gender", gender_opts, index=g_idx)
                 st.session_state["f_gender"] = sel_gender
 
-                hair_col_opts = ["All", "Blond Hair", "Black Hair", "Brown Hair", "Gray Hair", "Bald"]
-                hc_idx = hair_col_opts.index(st.session_state["f_hair_color"]) if st.session_state["f_hair_color"] in hair_col_opts else 0
+                hair_col_opts = [
+                    "All",
+                    "Blond Hair",
+                    "Black Hair",
+                    "Brown Hair",
+                    "Gray Hair",
+                    "Bald",
+                ]
+                hc_idx = (
+                    hair_col_opts.index(st.session_state["f_hair_color"])
+                    if st.session_state["f_hair_color"] in hair_col_opts
+                    else 0
+                )
                 sel_hc = st.selectbox("Hair Color", hair_col_opts, index=hc_idx)
                 st.session_state["f_hair_color"] = sel_hc
 
             with fcol2:
                 smile_opts = ["All", "Smiling", "Neutral"]
-                s_idx = smile_opts.index(st.session_state["f_smile"]) if st.session_state["f_smile"] in smile_opts else 0
+                s_idx = (
+                    smile_opts.index(st.session_state["f_smile"])
+                    if st.session_state["f_smile"] in smile_opts
+                    else 0
+                )
                 sel_smile = st.selectbox("Expression", smile_opts, index=s_idx)
                 st.session_state["f_smile"] = sel_smile
 
                 hair_style_opts = ["All", "Wavy Hair", "Straight Hair", "Bangs"]
-                hs_idx = hair_style_opts.index(st.session_state["f_hair_style"]) if st.session_state["f_hair_style"] in hair_style_opts else 0
+                hs_idx = (
+                    hair_style_opts.index(st.session_state["f_hair_style"])
+                    if st.session_state["f_hair_style"] in hair_style_opts
+                    else 0
+                )
                 sel_hs = st.selectbox("Hair Texture / Style", hair_style_opts, index=hs_idx)
                 st.session_state["f_hair_style"] = sel_hs
 
             with fcol3:
                 age_opts = ["All", "Young", "Senior"]
-                a_idx = age_opts.index(st.session_state["f_age"]) if st.session_state["f_age"] in age_opts else 0
+                a_idx = (
+                    age_opts.index(st.session_state["f_age"])
+                    if st.session_state["f_age"] in age_opts
+                    else 0
+                )
                 sel_age = st.selectbox("Age Group", age_opts, index=a_idx)
                 st.session_state["f_age"] = sel_age
 
                 facial_hair_opts = ["All", "No Beard", "Mustache", "Goatee", "5 o'Clock Shadow"]
-                fh_idx = facial_hair_opts.index(st.session_state["f_facial_hair"]) if st.session_state["f_facial_hair"] in facial_hair_opts else 0
+                fh_idx = (
+                    facial_hair_opts.index(st.session_state["f_facial_hair"])
+                    if st.session_state["f_facial_hair"] in facial_hair_opts
+                    else 0
+                )
                 sel_fh = st.selectbox("Facial Hair", facial_hair_opts, index=fh_idx)
                 st.session_state["f_facial_hair"] = sel_fh
 
             with fcol4:
                 glasses_opts = ["All", "No", "Yes"]
-                gl_idx = glasses_opts.index(st.session_state["f_glasses"]) if st.session_state["f_glasses"] in glasses_opts else 0
+                gl_idx = (
+                    glasses_opts.index(st.session_state["f_glasses"])
+                    if st.session_state["f_glasses"] in glasses_opts
+                    else 0
+                )
                 sel_glasses = st.selectbox("Eyeglasses", glasses_opts, index=gl_idx)
                 st.session_state["f_glasses"] = sel_glasses
 
-                access_opts = ["All", "Wearing Earrings", "Wearing Hat", "Wearing Necklace", "Wearing Necktie", "Heavy Makeup"]
-                ac_idx = access_opts.index(st.session_state["f_accessories"]) if st.session_state["f_accessories"] in access_opts else 0
+                access_opts = [
+                    "All",
+                    "Wearing Earrings",
+                    "Wearing Hat",
+                    "Wearing Necklace",
+                    "Wearing Necktie",
+                    "Heavy Makeup",
+                ]
+                ac_idx = (
+                    access_opts.index(st.session_state["f_accessories"])
+                    if st.session_state["f_accessories"] in access_opts
+                    else 0
+                )
                 sel_ac = st.selectbox("Accessories & Styling", access_opts, index=ac_idx)
                 st.session_state["f_accessories"] = sel_ac
 
         # Search Bar & Filter Execution
-        search_query = st.text_input("🔍 Search by Image ID, Person Name, or Cluster Number:", placeholder="e.g. 001553, Sophia Bush, #2820")
+        search_query = st.text_input(
+            "🔍 Search by Image ID, Person Name, or Cluster Number:",
+            placeholder="e.g. 001553, Sophia Bush, #2820",
+        )
 
         if not df_gallery.empty:
             filtered = df_gallery.copy()
@@ -1149,46 +1279,71 @@ def main():
             if st.session_state["f_gender"] != "All":
                 filtered = filtered[filtered["male"] == (st.session_state["f_gender"] == "Male")]
             if st.session_state["f_smile"] != "All":
-                filtered = filtered[filtered["smiling"] == (st.session_state["f_smile"] == "Smiling")]
+                filtered = filtered[
+                    filtered["smiling"] == (st.session_state["f_smile"] == "Smiling")
+                ]
             if st.session_state["f_age"] != "All":
                 filtered = filtered[filtered["young"] == (st.session_state["f_age"] == "Young")]
             if st.session_state["f_glasses"] != "All":
-                filtered = filtered[filtered["eyeglasses"] == (st.session_state["f_glasses"] == "Yes")]
+                filtered = filtered[
+                    filtered["eyeglasses"] == (st.session_state["f_glasses"] == "Yes")
+                ]
 
             # Apply Extended Attributes
             if st.session_state["f_hair_color"] != "All":
                 clean_hc = st.session_state["f_hair_color"].replace(" ", "_")
-                filtered = filtered[filtered["attributes"].apply(lambda attrs: clean_hc in attrs if isinstance(attrs, list) else False)]
+                filtered = filtered[
+                    filtered["attributes"].apply(
+                        lambda attrs: clean_hc in attrs if isinstance(attrs, list) else False
+                    )
+                ]
 
             if st.session_state["f_hair_style"] != "All":
                 clean_hs = st.session_state["f_hair_style"].replace(" ", "_")
-                filtered = filtered[filtered["attributes"].apply(lambda attrs: clean_hs in attrs if isinstance(attrs, list) else False)]
+                filtered = filtered[
+                    filtered["attributes"].apply(
+                        lambda attrs: clean_hs in attrs if isinstance(attrs, list) else False
+                    )
+                ]
 
             if st.session_state["f_facial_hair"] != "All":
                 clean_fh = st.session_state["f_facial_hair"].replace(" ", "_")
-                filtered = filtered[filtered["attributes"].apply(lambda attrs: clean_fh in attrs if isinstance(attrs, list) else False)]
+                filtered = filtered[
+                    filtered["attributes"].apply(
+                        lambda attrs: clean_fh in attrs if isinstance(attrs, list) else False
+                    )
+                ]
 
             if st.session_state["f_accessories"] != "All":
                 clean_ac = st.session_state["f_accessories"].replace(" ", "_")
-                filtered = filtered[filtered["attributes"].apply(lambda attrs: clean_ac in attrs if isinstance(attrs, list) else False)]
+                filtered = filtered[
+                    filtered["attributes"].apply(
+                        lambda attrs: clean_ac in attrs if isinstance(attrs, list) else False
+                    )
+                ]
 
             # Apply Confidence Cutoff Slider
             cutoff_dec = confidence_cutoff / 100.0
-            filtered = filtered[filtered["confidence"].apply(lambda c: max(c.values()) >= cutoff_dec if isinstance(c, dict) else True)]
+            filtered = filtered[
+                filtered["confidence"].apply(
+                    lambda c: max(c.values()) >= cutoff_dec if isinstance(c, dict) else True
+                )
+            ]
 
             if search_query.strip():
                 sq = search_query.strip().lower()
                 filtered = filtered[
-                    filtered["filename"].str.lower().str.contains(sq) |
-                    filtered["person_name"].str.lower().str.contains(sq) |
-                    filtered["ground_truth_id"].astype(str).str.contains(sq)
+                    filtered["filename"].str.lower().str.contains(sq)
+                    | filtered["person_name"].str.lower().str.contains(sq)
+                    | filtered["ground_truth_id"].astype(str).str.contains(sq)
                 ]
 
             # Apply Display Limit
             displayed_items = filtered.head(display_limit)
 
             # Results Counter Badge
-            st.markdown(f"""
+            st.markdown(
+                f"""
             <div style="display: flex; justify-content: space-between; align-items: center; margin: 16px 0 12px 0;">
                 <div style="font-size: 1.05rem; font-weight: 600; color: #f3f4f6;">
                     Showing <span style="color: #38bdf8;">{len(displayed_items)}</span> of <span style="color: #818cf8;">{len(filtered)}</span> matching faces (Threshold: &ge;{confidence_cutoff}%)
@@ -1197,10 +1352,14 @@ def main():
                     Curated High-Res Bank (72 verified ground truth identities)
                 </div>
             </div>
-            """, unsafe_allow_html=True)
+            """,
+                unsafe_allow_html=True,
+            )
 
             if len(displayed_items) == 0:
-                st.warning("No faces match this exact filter combination and confidence cutoff. Try lowering the threshold slider or broadening criteria.")
+                st.warning(
+                    "No faces match this exact filter combination and confidence cutoff. Try lowering the threshold slider or broadening criteria."
+                )
             else:
                 cols_per_row = 6
                 for i in range(0, len(displayed_items), cols_per_row):
@@ -1210,14 +1369,18 @@ def main():
                         with cols[c_idx]:
                             img_path = item.get("path", "")
                             if os.path.exists(img_path):
-                                st.image(img_path, caption=item['person_name'], use_container_width=True)
+                                st.image(
+                                    img_path, caption=item["person_name"], use_container_width=True
+                                )
                             elif item.get("thumbnail"):
-                                st.markdown(f'<img src="{item["thumbnail"]}" style="width:100%; border-radius:10px; border: 1px solid rgba(255,255,255,0.1);" />', unsafe_allow_html=True)
+                                st.markdown(
+                                    f'<img src="{item["thumbnail"]}" style="width:100%; border-radius:10px; border: 1px solid rgba(255,255,255,0.1);" />',
+                                    unsafe_allow_html=True,
+                                )
                                 st.caption(f"{item['person_name']}")
                             st.caption(f"ID #{item['ground_truth_id']}")
         else:
             st.info("Loading gallery bank...")
-
 
     # ------------------------------------------------------------------------------
     # 9. VIEW 3: PIPELINE WORKFLOW & AUTOMATION
@@ -1230,7 +1393,8 @@ def main():
         )
 
         # Audit Scorecard Highlight
-        st.markdown("""
+        st.markdown(
+            """
         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 16px 0;">
             <div class="glass-card" style="padding: 14px 18px; border-left: 4px solid #10b981;">
                 <div style="font-size: 0.75rem; color: #94a3b8; font-weight: 600; text-transform: uppercase;">ML Evaluation Reliability</div>
@@ -1248,7 +1412,9 @@ def main():
                 <div style="font-size: 0.78rem; color: #cbd5e1; margin-top: 4px;">Automated CI/CD suite & multi-surface run triggers</div>
             </div>
         </div>
-        """, unsafe_allow_html=True)
+        """,
+            unsafe_allow_html=True,
+        )
 
         col_run, col_info = st.columns([1.2, 1.2])
         with col_run:
@@ -1259,13 +1425,16 @@ def main():
                     "Stage 1: Functional Dataset & Identity-Disjoint Validation",
                     "Stage 2: Model Context Protocol (MCP) JSON-RPC Protocol",
                     "Stage 3: Tensor Inference & Mathematical Invariants",
-                    "Stage 4: Multi-Architecture Benchmark Calibration"
-                ]
+                    "Stage 4: Multi-Architecture Benchmark Calibration",
+                ],
             )
-            run_btn = st.button("▶️ Execute Automated Pipeline Workflow", type="primary", use_container_width=True)
+            run_btn = st.button(
+                "▶️ Execute Automated Pipeline Workflow", type="primary", use_container_width=True
+            )
 
         with col_info:
-            st.markdown("""
+            st.markdown(
+                """
             <div class="glass-card" style="padding: 14px 18px;">
                 <div style="font-size: 0.82rem; color: #38bdf8; font-weight: 700; text-transform: uppercase;">GitHub Actions Workflow & CLI</div>
                 <div style="font-size: 0.85rem; color: #94a3b8; margin-top: 4px;">
@@ -1280,7 +1449,9 @@ def main():
                     </a>
                 </div>
             </div>
-            """, unsafe_allow_html=True)
+            """,
+                unsafe_allow_html=True,
+            )
 
         auto_run = st.session_state.get("auto_trigger_workflow", False)
         if auto_run:
@@ -1300,37 +1471,59 @@ def main():
                 )
 
                 # Stage 1
-                status_text.markdown("**[1/4]** 📁 *Executing Functional Dataset Invariants & Identity Leakage Verification...*")
+                status_text.markdown(
+                    "**[1/4]** 📁 *Executing Functional Dataset Invariants & Identity Leakage Verification...*"
+                )
                 progress_bar.progress(25)
                 verify_functional_data()
 
                 # Stage 2
-                status_text.markdown("**[2/4]** ⚡ *Executing Model Context Protocol (MCP) JSON-RPC Verification...*")
+                status_text.markdown(
+                    "**[2/4]** ⚡ *Executing Model Context Protocol (MCP) JSON-RPC Verification...*"
+                )
                 progress_bar.progress(50)
                 verify_functional_mcp()
 
                 # Stage 3
-                status_text.markdown("**[3/4]** 🧠 *Validating Tensor Normalization & Test-Time Augmentation (TTA)...*")
+                status_text.markdown(
+                    "**[3/4]** 🧠 *Validating Tensor Normalization & Test-Time Augmentation (TTA)...*"
+                )
                 progress_bar.progress(75)
                 verify_functional_inference()
 
                 # Stage 4
-                status_text.markdown("**[4/4]** 📊 *Validating 8-Model Architecture Benchmark Calibration...*")
+                status_text.markdown(
+                    "**[4/4]** 📊 *Validating 8-Model Architecture Benchmark Calibration...*"
+                )
                 progress_bar.progress(100)
                 verify_functional_benchmarks()
 
                 status_text.empty()
-                st.success("🎉 **All 4 Functional Pipeline Verification Stages Passed with Zero Errors!**")
+                st.success(
+                    "🎉 **All 4 Functional Pipeline Verification Stages Passed with Zero Errors!**"
+                )
 
                 w1, w2, w3, w4 = st.columns(4)
                 with w1:
-                    st.markdown("""<div class="metric-badge-card"><div class="metric-badge-value" style="color: #10b981;">PASSED</div><div class="metric-badge-label">0% Identity Leakage</div></div>""", unsafe_allow_html=True)
+                    st.markdown(
+                        """<div class="metric-badge-card"><div class="metric-badge-value" style="color: #10b981;">PASSED</div><div class="metric-badge-label">0% Identity Leakage</div></div>""",
+                        unsafe_allow_html=True,
+                    )
                 with w2:
-                    st.markdown("""<div class="metric-badge-card"><div class="metric-badge-value" style="color: #10b981;">PASSED</div><div class="metric-badge-label">MCP JSON-RPC Protocol</div></div>""", unsafe_allow_html=True)
+                    st.markdown(
+                        """<div class="metric-badge-card"><div class="metric-badge-value" style="color: #10b981;">PASSED</div><div class="metric-badge-label">MCP JSON-RPC Protocol</div></div>""",
+                        unsafe_allow_html=True,
+                    )
                 with w3:
-                    st.markdown("""<div class="metric-badge-card"><div class="metric-badge-value" style="color: #10b981;">PASSED</div><div class="metric-badge-label">Tensor Math Bounds</div></div>""", unsafe_allow_html=True)
+                    st.markdown(
+                        """<div class="metric-badge-card"><div class="metric-badge-value" style="color: #10b981;">PASSED</div><div class="metric-badge-label">Tensor Math Bounds</div></div>""",
+                        unsafe_allow_html=True,
+                    )
                 with w4:
-                    st.markdown("""<div class="metric-badge-card"><div class="metric-badge-value" style="color: #10b981;">PASSED</div><div class="metric-badge-label">8 Model Regimes</div></div>""", unsafe_allow_html=True)
+                    st.markdown(
+                        """<div class="metric-badge-card"><div class="metric-badge-value" style="color: #10b981;">PASSED</div><div class="metric-badge-label">8 Model Regimes</div></div>""",
+                        unsafe_allow_html=True,
+                    )
 
                 with st.expander("📋 Verified Pipeline Execution Log", expanded=True):
                     st.markdown("""
@@ -1361,8 +1554,8 @@ def main():
                 "mysql_get_celebrity_stats",
                 "mysql_list_tables",
                 "mysql_describe_table",
-                "mysql_query"
-            ]
+                "mysql_query",
+            ],
         )
 
         if mcp_tool_choice == "mysql_identify_face":
@@ -1390,12 +1583,21 @@ def main():
                     "jsonrpc": "2.0",
                     "id": int(time.time()),
                     "method": "tools/call",
-                    "params": {"name": "mysql_get_celebrity_stats", "arguments": {}}
+                    "params": {"name": "mysql_get_celebrity_stats", "arguments": {}},
                 }
                 resp = {
                     "jsonrpc": "2.0",
                     "id": req["id"],
-                    "result": {"content": [{"type": "text", "text": df_res.to_string(index=False) if df_res is not None else err}]}
+                    "result": {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": df_res.to_string(index=False)
+                                if df_res is not None
+                                else err,
+                            }
+                        ]
+                    },
                 }
                 c1, c2 = st.columns(2)
                 with c1:
@@ -1413,19 +1615,34 @@ def main():
                     "jsonrpc": "2.0",
                     "id": int(time.time()),
                     "method": "tools/call",
-                    "params": {"name": "mysql_list_tables", "arguments": {"database": "celeba_db"}}
+                    "params": {"name": "mysql_list_tables", "arguments": {"database": "celeba_db"}},
                 }
                 resp = {
                     "jsonrpc": "2.0",
                     "id": req["id"],
-                    "result": {"content": [{"type": "text", "text": df_res.to_string(index=False) if df_res is not None else err}]}
+                    "result": {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": df_res.to_string(index=False)
+                                if df_res is not None
+                                else err,
+                            }
+                        ]
+                    },
                 }
                 st.json(resp)
                 if df_res is not None:
                     st.dataframe(df_res, use_container_width=True)
 
         elif mcp_tool_choice == "mysql_describe_table":
-            allowed_tables = {"celebrities", "celeba_attributes", "celeba_identities", "images_metadata", "celeba_combined_dataset"}
+            allowed_tables = {
+                "celebrities",
+                "celeba_attributes",
+                "celeba_identities",
+                "images_metadata",
+                "celeba_combined_dataset",
+            }
             tbl = st.selectbox("Select Table:", sorted(list(allowed_tables)))
             if st.button(f"🚀 Invoke MCP Tool `mysql_describe_table` ({tbl})", type="primary"):
                 if tbl in allowed_tables:
@@ -1437,7 +1654,9 @@ def main():
                     st.error("Invalid table selection.")
 
         elif mcp_tool_choice == "mysql_query":
-            custom_sql = st.text_area("SQL Statement:", "SELECT * FROM celeba_combined_dataset LIMIT 5;", height=100)
+            custom_sql = st.text_area(
+                "SQL Statement:", "SELECT * FROM celeba_combined_dataset LIMIT 5;", height=100
+            )
             if st.button("🚀 Invoke MCP Tool `mysql_query`", type="primary"):
                 df_res, err = query_mysql(custom_sql)
                 if err:
@@ -1445,19 +1664,22 @@ def main():
                 elif df_res is not None:
                     st.dataframe(df_res, use_container_width=True)
 
-
     # ------------------------------------------------------------------------------
     # 10. VIEW 4: MODEL BENCHMARKS & EVALUATION
     # ------------------------------------------------------------------------------
     elif app_mode == "📊 Model Benchmarks & Metrics":
         st.markdown("### 📊 Deep Learning & Ensemble Benchmark Suite")
-        st.write("Rigorous 5-fold cross-validation performance across facial classification and smile recognition:")
+        st.write(
+            "Rigorous 5-fold cross-validation performance across facial classification and smile recognition:"
+        )
 
-        tab_bench, tab_cards, tab_fair = st.tabs([
-            "📈 Evaluated Benchmark Matrix",
-            "📄 Model Cards & Architecture Specs",
-            "⚖️ Fairness & Bias Audit",
-        ])
+        tab_bench, tab_cards, tab_fair = st.tabs(
+            [
+                "📈 Evaluated Benchmark Matrix",
+                "📄 Model Cards & Architecture Specs",
+                "⚖️ Fairness & Bias Audit",
+            ]
+        )
 
         with tab_bench:
             df_metrics = load_benchmark_metrics()
@@ -1472,19 +1694,33 @@ def main():
             c1, c2 = st.columns(2)
             with c1:
                 if os.path.exists(fig_comp):
-                    st.image(fig_comp, caption="Model Benchmark Comparison & Log Loss", use_container_width=True)
+                    st.image(
+                        fig_comp,
+                        caption="Model Benchmark Comparison & Log Loss",
+                        use_container_width=True,
+                    )
             with c2:
                 if os.path.exists(fig_roc):
-                    st.image(fig_roc, caption="Confusion Matrix & ROC Curve", use_container_width=True)
+                    st.image(
+                        fig_roc, caption="Confusion Matrix & ROC Curve", use_container_width=True
+                    )
 
             if os.path.exists(fig_demo):
-                st.image(fig_demo, caption="CelebA Demographic & Attribute Distributions", use_container_width=True)
+                st.image(
+                    fig_demo,
+                    caption="CelebA Demographic & Attribute Distributions",
+                    use_container_width=True,
+                )
 
         with tab_cards:
             st.markdown("#### Formal Machine Learning Model Cards")
             card_choice = st.selectbox(
                 "Select Model Card to Inspect:",
-                ["4-Stage Residual Conv2D CNN", "Vision Transformer (ViT)", "Multi-Architecture Bagged Ensemble + TTA"]
+                [
+                    "4-Stage Residual Conv2D CNN",
+                    "Vision Transformer (ViT)",
+                    "Multi-Architecture Bagged Ensemble + TTA",
+                ],
             )
             card_map = {
                 "4-Stage Residual Conv2D CNN": "reports/model_cards/residual_cnn_card.md",
@@ -1500,14 +1736,15 @@ def main():
 
         with tab_fair:
             st.markdown("#### Algorithmic Fairness & Disparate Impact Audit")
-            st.write("Evaluating Equal Opportunity Difference and the EEOC 4/5ths Disparate Impact rule across demographic subgroups:")
+            st.write(
+                "Evaluating Equal Opportunity Difference and the EEOC 4/5ths Disparate Impact rule across demographic subgroups:"
+            )
             st.markdown("""
             | Demographic Subgroup | Group Positive Rate | Reference Positive Rate | Disparate Impact Ratio | EEOC 4/5ths Compliant? | Demographic Parity Diff |
             | :------------------- | :-----------------: | :---------------------: | :--------------------: | :---------------------: | :----------------------: |
             | **Male vs. Female** | 48.60% | 52.40% | **0.9275** | ✅ Compliant (>= 0.80) | 0.0380 |
             | **Young vs. Senior** | 53.10% | 46.90% | **0.8832** | ✅ Compliant (>= 0.80) | 0.0620 |
             """)
-
 
     # ------------------------------------------------------------------------------
     # 11. VIEW 5: MYSQL DATABASE CONSOLE
@@ -1521,8 +1758,8 @@ def main():
                 "Overview Table Counts",
                 "Top 10 Identities with Most Photos",
                 "Demographic Attribute Distribution",
-                "Sample 10 Rows from celeba_combined_dataset"
-            ]
+                "Sample 10 Rows from celeba_combined_dataset",
+            ],
         )
 
         query_map = {
@@ -1556,7 +1793,7 @@ def main():
                 SELECT image_id, person_id, celebrity_name, gender, age_group, expression
                 FROM celeba_combined_dataset
                 LIMIT 10;
-            """
+            """,
         }
 
         sql_to_run = st.text_area("SQL Statement:", query_map[preset], height=120)
@@ -1569,11 +1806,11 @@ def main():
                 st.success(f"Query returned {len(df_res)} row(s).")
                 st.dataframe(df_res, use_container_width=True)
 
-
     # ------------------------------------------------------------------------------
     # 12. FOOTER COMPONENT WITH CALLIGRAPHY SIGNATURE
     # ------------------------------------------------------------------------------
-    st.markdown("""
+    st.markdown(
+        """
     <div class="calligraphy-footer">
         <hr class="footer-divider-gradient" />
         <div class="footer-desc">
@@ -1592,10 +1829,9 @@ def main():
             <span>Model Context Protocol</span>
         </div>
     </div>
-    """, unsafe_allow_html=True)
-
-
-
+    """,
+        unsafe_allow_html=True,
+    )
 
 
 if __name__ == "__main__":

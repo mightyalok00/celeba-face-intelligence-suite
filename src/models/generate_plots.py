@@ -47,12 +47,16 @@ def generate_all_evaluation_figures():
     x = np.arange(len(models))
     width = 0.35
 
-    plt.bar(x - width/2, accuracies, width, label="Accuracy (%)", color="#3b82f6", alpha=0.9)
-    plt.bar(x + width/2, f1_scores, width, label="F1-Score (%)", color="#10b981", alpha=0.9)
+    plt.bar(x - width / 2, accuracies, width, label="Accuracy (%)", color="#3b82f6", alpha=0.9)
+    plt.bar(x + width / 2, f1_scores, width, label="F1-Score (%)", color="#10b981", alpha=0.9)
 
     plt.xlabel("Model Architectural Regimes", fontsize=11, fontweight="bold")
     plt.ylabel("Score (%)", fontsize=11, fontweight="bold")
-    plt.title("CelebA Face AI - Multi-Architecture Benchmark Evaluation (Identity-Disjoint)", fontsize=13, fontweight="bold")
+    plt.title(
+        "CelebA Face AI - Multi-Architecture Benchmark Evaluation (Identity-Disjoint)",
+        fontsize=13,
+        fontweight="bold",
+    )
     plt.xticks(x, models, rotation=25, ha="right", fontsize=9)
     plt.ylim(60, 100)
     plt.legend(loc="upper left")
@@ -64,7 +68,14 @@ def generate_all_evaluation_figures():
     # 2. Confusion Matrices for models
     if "Confusion Matrix" in df.columns:
         for _, row in df.iterrows():
-            name = row["Model Configuration"].replace(" ", "_").replace("(", "").replace(")", "").replace("+", "_").lower()
+            name = (
+                row["Model Configuration"]
+                .replace(" ", "_")
+                .replace("(", "")
+                .replace(")", "")
+                .replace("+", "_")
+                .lower()
+            )
             try:
                 cm = np.array(json.loads(row["Confusion Matrix"]))
                 plt.figure(figsize=(4, 3.5), dpi=200)
@@ -78,9 +89,14 @@ def generate_all_evaluation_figures():
                 thresh = cm.max() / 2.0
                 for i in range(cm.shape[0]):
                     for j in range(cm.shape[1]):
-                        plt.text(j, i, format(cm[i, j], "d"),
-                                 ha="center", va="center",
-                                 color="white" if cm[i, j] > thresh else "black")
+                        plt.text(
+                            j,
+                            i,
+                            format(cm[i, j], "d"),
+                            ha="center",
+                            va="center",
+                            color="white" if cm[i, j] > thresh else "black",
+                        )
 
                 plt.ylabel("Ground Truth")
                 plt.xlabel("Predicted")
@@ -99,7 +115,7 @@ def generate_all_evaluation_figures():
             fpr = np.linspace(0, 1, 100)
             # Standard smooth ROC curve shape matching AUC
             power = (1.0 - auc) / auc if auc > 0.5 else 1.0
-            tpr = fpr ** power
+            tpr = fpr**power
             plt.plot(fpr, tpr, lw=1.8, label=f"{row['Model Configuration']} (AUC = {auc:.4f})")
 
         plt.plot([0, 1], [0, 1], color="navy", lw=1.5, linestyle="--")
@@ -107,7 +123,10 @@ def generate_all_evaluation_figures():
         plt.ylim([0.0, 1.05])
         plt.xlabel("False Positive Rate", fontweight="bold")
         plt.ylabel("True Positive Rate", fontweight="bold")
-        plt.title("Receiver Operating Characteristic (ROC) - Multi-Architecture Comparison", fontweight="bold")
+        plt.title(
+            "Receiver Operating Characteristic (ROC) - Multi-Architecture Comparison",
+            fontweight="bold",
+        )
         plt.legend(loc="lower right", fontsize=8)
         plt.grid(True, linestyle="--", alpha=0.4)
         plt.tight_layout()
@@ -118,4 +137,3 @@ def generate_all_evaluation_figures():
 if __name__ == "__main__":
     generate_all_evaluation_figures()
     print("Evaluation figures generated successfully.")
-

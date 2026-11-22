@@ -95,7 +95,14 @@ jobs:
 
       - name: Run Comprehensive Test Suite with Full Module Coverage
         run: |
-          python -m pytest tests/unit/ tests/security/ tests/end_to_end/ -v --cov=src --cov=app --cov-report=term-missing
+          python -m pytest tests/unit/ tests/security/ tests/end_to_end/ -v --cov=src --cov=app --cov-report=term-missing --cov-report=xml --cov-fail-under=32
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-coverage
+          path: coverage.xml
 
   integration_tests:
     name: Integration & Application Tests
@@ -199,6 +206,15 @@ jobs:
           python -c "
           import pandas as pd
           df = pd.read_csv('reports/model_benchmark_results.csv')
-          print('Verified 8 models trained:')
+          assert len(df) == 8, 'Expected eight benchmark rows'
+          assert df[['Accuracy', 'F1-Score']].notna().all().all(), 'Missing metrics'
+          print('Verified eight smoke benchmark rows (not production accuracy):')
           print(df[['Model Configuration', 'Accuracy', 'F1-Score']])
           "
+
+      - name: Upload smoke benchmark
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-benchmark
+          path: reports/model_benchmark_results.csv
+          if-no-files-found: error

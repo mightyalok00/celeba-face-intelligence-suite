@@ -25,7 +25,8 @@ def test_full_query_roundtrip_mocked(mock_connect):
     data, err = execute_parameterized_query(sql, (2880,))
 
     assert err is None
-    assert data is not None
+    if data is None:
+        pytest.fail("execute_parameterized_query returned None for valid query")
     assert len(data) == 1
     assert data[0]["person_id"] == 2880
     mock_conn.close.assert_called_once()

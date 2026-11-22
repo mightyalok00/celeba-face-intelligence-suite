@@ -43,7 +43,8 @@ def test_mcp_face_identification_fallback_behavior():
         assert req["method"] == "tools/call"
         assert req["params"]["name"] == "mysql_identify_face"
 
-        assert isinstance(structured, dict)
+        if not isinstance(structured, dict):
+            pytest.fail("execute_mcp_face_identification should return a dict")
         assert structured.get("is_fallback") is True
         assert "Database Offline" in str(structured.get("source", ""))
         assert structured["image_id"] == "001553.jpg"
@@ -68,7 +69,8 @@ def test_mcp_face_identification_live_db_match():
 
     with patch("app.app.query_mysql", return_value=(mock_df, None)):
         req, resp, structured = execute_mcp_face_identification("000001.jpg")
-        assert isinstance(structured, dict)
+        if not isinstance(structured, dict):
+            pytest.fail("execute_mcp_face_identification should return a dict")
         assert structured.get("is_fallback") is False
         assert structured["person_name"] == "Celebrity Alpha"
         assert structured["identity_cluster_id"] == 101

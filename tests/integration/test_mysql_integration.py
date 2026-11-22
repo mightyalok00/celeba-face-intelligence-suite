@@ -31,9 +31,11 @@ def test_full_query_roundtrip_mocked(mock_connect):
 
     # 3. Assert error-free execution and narrow type for static analyzers
     assert err is None
-    assert data is not None
-    assert len(data) == 1
-    assert data[0]["person_id"] == 2880
+    if not isinstance(data, list) or len(data) == 0:
+        pytest.fail("Query failed or returned empty data")
+    row = data[0]
+    assert isinstance(row, dict)
+    assert row.get("person_id") == 2880
     mock_conn.close.assert_called_once()
 
 
@@ -55,13 +57,17 @@ def test_live_mysql_roundtrip_when_service_available():
     when an active MySQL service endpoint is available (e.g. in GitHub Actions CI container).
     Gracefully skips if MySQL service is not reachable in local developer environment.
     """
+    import importlib
     import os
-
-    import pymysql
 
     host = os.getenv("MYSQL_HOST")
     if not host or host == "192.0.2.1":
         pytest.skip("MYSQL_HOST not configured for live integration test; skipping.")
+
+    try:
+        pymysql = importlib.import_module("pymysql")
+    except ImportError:
+        pytest.skip("pymysql not installed; skipping live test.")
 
     try:
         conn = pymysql.connect(
@@ -77,9 +83,11 @@ def test_live_mysql_roundtrip_when_service_available():
         # Execute live parameterized query through application database layer
         data, err = execute_parameterized_query("SELECT 1 AS alive", None)
         assert err is None
-        assert data is not None
-        assert len(data) == 1
-        assert data[0]["alive"] == 1
+        if not isinstance(data, list) or len(data) == 0:
+            pytest.fail("Live query failed or returned empty data")
+        row = data[0]
+        assert isinstance(row, dict)
+        assert row.get("alive") == 1
     except Exception as e:
         if os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true":
             pytest.fail(f"Live MySQL service is required in CI but failed to connect to {host}: {e}")

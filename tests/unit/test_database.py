@@ -23,7 +23,7 @@ def test_missing_env_raises_environment_error(monkeypatch):
     assert "MYSQL_PASSWORD" in str(exc_info.value)
 
 
-@patch("pymysql.connect")
+@patch("src.database.connection.pymysql.connect")
 def test_successful_database_connection(mock_connect, monkeypatch):
     """
     Verify get_database_connection calls pymysql with strict environment values

@@ -11,8 +11,8 @@ import threading
 from contextlib import contextmanager
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
-import pymysql
-import pymysql.cursors
+import pymysql  # pyrefly: ignore[missing-source-for-stubs]
+import pymysql.cursors  # pyrefly: ignore[missing-source-for-stubs]
 
 logger = logging.getLogger("celeba_db")
 

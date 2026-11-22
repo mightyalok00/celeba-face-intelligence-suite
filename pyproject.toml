@@ -60,12 +60,16 @@ exclude_dirs = ["tests", "data", "img_align_celeba"]
 skips = ["B101", "B311"]
 
 [tool.pyright]
-include = ["app", "src", "workflow", "tests"]
+include = ["app", "src", "tests", "scripts"]
 exclude = ["img_align_celeba", "data", ".git"]
 reportMissingTypeStubs = false
 reportUnknownMemberType = false
 reportUnknownVariableType = false
 reportUnknownArgumentType = false
+
+[tool.pyrefly]
+[tool.pyrefly.errors]
+missing-source-for-stubs = "ignore"
 
 [tool.coverage.run]
 source = ["src", "app"]

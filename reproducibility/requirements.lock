@@ -1,0 +1,22 @@
+# CelebA Face AI - Locked Environment Dependencies
+# Generated for Python 3.10 - 3.14 on Windows/Linux x86_64
+torch==2.11.0
+torchvision==0.26.0
+xgboost==3.4.1
+scikit-learn==1.9.0
+scipy==1.18.1
+numpy==2.2.0
+pandas==2.2.3
+pillow==11.0.0
+matplotlib==3.10.0
+seaborn==0.13.2
+pymysql==1.1.1
+cryptography==50.0.0
+streamlit==1.62.0
+pyyaml==6.0.2
+pytest==9.1.1
+pytest-cov==7.1.0
+pytest-mock==3.17.0
+ruff==0.16.10
+mypy==1.14.0
+bandit==1.9.4

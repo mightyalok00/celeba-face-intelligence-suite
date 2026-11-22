@@ -1,11 +1,17 @@
 # CelebA Face Intelligence Suite - Reproducibility & Benchmark Configuration
-version: "2.5.0"
+version: "3.0.0"
 experiment_name: "celeba_facial_attribute_benchmarks"
 
 environment:
   seed: 42
   deterministic: true
   python_version: "3.10+"
+  hardware:
+    preferred_device: "cuda"
+    gpu_target: "NVIDIA GeForce RTX 3050 6GB Laptop GPU"
+    mixed_precision: true
+    batch_size: 32
+    num_workers: 0
 
 dataset:
   name: "CelebA (Large-scale CelebFaces Attributes Dataset)"
@@ -13,7 +19,7 @@ dataset:
   images_path: "img_align_celeba"
   target_attribute: "Smiling"
   total_attributes: 40
-  feature_projection_dim: 48
+  image_resolution: [64, 64, 3]
 
 split_strategy:
   type: "IdentityDisjoint"
@@ -25,60 +31,61 @@ split_strategy:
     splitter: "StratifiedGroupKFold"
     shuffle: true
 
-models:
-  ann:
-    type: "Artificial Neural Network (MLP)"
-    hidden_layer_sizes: [64, 32]
-    max_iter: 20
-    learning_rate: "adaptive"
+deep_learning_architectures:
+  residual_cnn:
+    type: "ResidualConv2DCNN"
+    channels: [32, 64, 128, 256]
+    input_shape: [3, 64, 64]
+    learning_rate: 0.0003
+    dropout: 0.2
+
+  vision_transformer:
+    type: "VisionTransformerClassifier"
+    patch_size: 8
+    embed_dim: 64
+    num_heads: 4
+    depth: 3
+    mlp_ratio: 2.0
+    dropout: 0.1
 
   spatial_bilstm:
-    type: "Spatial BiLSTM Classifier"
+    type: "SpatialBiLSTMClassifier"
+    hidden_dim: 64
+    num_layers: 2
+    feature_dim: 192
+    dropout: 0.2
+
+  ann:
+    type: "ANNClassifier"
+    hidden_dims: [256, 128, 64]
+    dropout: 0.3
+    input_dim: 12288
+
+classical_baselines:
+  logistic_regression:
+    C: 0.1
     solver: "lbfgs"
-    C: 0.5
+  extratrees:
+    n_estimators: 100
+    max_depth: 12
+  hist_gradient_boosting:
     max_iter: 100
-
-  residual_cnn:
-    type: "Deep Residual CNN (1D ResNet)"
-    n_estimators: 40
-    max_depth: 8
-    n_jobs: -1
-
-  vit:
-    type: "Vision Transformer (Histogram Gradient Architecture)"
-    max_iter: 45
+    learning_rate: 0.08
+  single_fold_xgboost:
+    n_estimators: 120
     max_depth: 5
     learning_rate: 0.08
-
-  single_fold_xgboost:
-    type: "Single-Fold XGBoost"
-    n_estimators: 45
-    max_depth: 4
-    learning_rate: 0.08
     reg_lambda: 1.5
+  bagged_5fold_xgboost:
+    n_splits: 5
+    n_estimators: 100
+    max_depth: 5
 
-  bagged_xgboost:
-    type: "5-Fold Bagged XGBoost"
-    n_estimators: 45
-    folds: 5
-
-  slsqp_ensemble:
-    type: "5-Fold SLSQP Stacking Ensemble"
-    solver: "SLSQP"
-    loss: "log_loss"
-    weights_constraint: "sum_to_1_positive"
-    tuning_set: "out_of_fold_validation"
-
-  slsqp_ensemble_tta:
-    type: "5-Fold Ensemble + Test-Time Augmentation (TTA)"
-    tta_blending: "arithmetic_mean"
-
-metrics:
-  - "Accuracy"
-  - "Precision"
-  - "Recall"
-  - "F1-Score"
-  - "ROC-AUC"
-  - "PR-AUC"
-  - "Confusion Matrix"
-  - "Log Loss"
+ensemble:
+  optimization: "SLSQP"
+  objective: "log_loss"
+  constraint: "convex_combination (w_i >= 0, sum(w_i) = 1.0)"
+  test_time_augmentation:
+    enabled: true
+    flip_axes: "horizontal"
+    formula: "0.5 * P(X) + 0.5 * P(X_flip)"

@@ -12,8 +12,8 @@ const MYSQL_BIN = process.env.MYSQL_BIN || 'D:\\MySQL\\bin\\mysql.exe';
 const MYSQL_HOST = process.env.MYSQL_HOST || '127.0.0.1';
 const MYSQL_PORT = process.env.MYSQL_PORT || '3306';
 const MYSQL_USER = process.env.MYSQL_USER || 'celeba_user';
-const MYSQL_PASS = process.env.MYSQL_PASS || process.env.MYSQL_PASSWORD || 'celeba_pass_2026';
-const MYSQL_DB = process.env.MYSQL_DB || process.env.MYSQL_DATABASE || 'celeba_db';
+const MYSQL_PASS = process.env.MYSQL_PASSWORD || process.env.MYSQL_PASS || '';
+const MYSQL_DB = process.env.MYSQL_DATABASE || process.env.MYSQL_DB || 'celeba_db';
 
 function executeQuery(query, db = MYSQL_DB) {
   return new Promise((resolve) => {
@@ -139,7 +139,10 @@ async function handleToolCall(name, args = {}) {
     } else if (img.endsWith('.png')) {
       img = img.replace('.png', '.jpg');
     }
-    const cleanImg = img.replace(/['"\\]/g, '');
+    const cleanImg = img.replace(/['"\\]/g, '').trim();
+    if (!/^[a-zA-Z0-9_\-.]+\.(jpg|jpeg|png)$/i.test(cleanImg)) {
+      return { isError: true, content: [{ type: 'text', text: 'Error: Invalid image filename format. Must be alphanumeric filename ending in .jpg/.png' }] };
+    }
     const sql = `
       SELECT 
         m.image_id,

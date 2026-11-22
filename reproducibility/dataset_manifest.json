@@ -1,0 +1,39 @@
+{
+  "dataset_name": "CelebFaces Attributes Dataset (CelebA)",
+  "version": "1.0.0",
+  "total_images": 202599,
+  "total_unique_identities": 10177,
+  "total_binary_attributes": 40,
+  "image_format": "JPEG (Aligned and Cropped)",
+  "resolution": [218, 178, 3],
+  "canonical_target_size": [64, 64, 3],
+  "target_attribute": "Smiling",
+  "files": {
+    "list_attr_celeba.csv": {
+      "path": "data/metadata/list_attr_celeba.csv",
+      "sha256": "67be7fa3c3a2a58013c78a6312ef26edfcb139109d5e8bf9727acc286566a286",
+      "records": 202599,
+      "columns": 41
+    },
+    "identity_CelebA.txt": {
+      "path": "data/metadata/identity_CelebA.txt",
+      "sha256": "c6143857c3e2630ac2da9f782e9c1232e5e59be993a9d44e8a7916c78a6158c0",
+      "records": 202599,
+      "unique_identities": 10177
+    },
+    "celebrities.csv": {
+      "path": "data/metadata/celebrities.csv",
+      "sha256": "211ae573ccc16b846bc246e20a8956fc8f3ad5063f256d93901cf54a65a84503",
+      "records": 1090
+    }
+  },
+  "evaluation_protocol": {
+    "splitting_strategy": "StratifiedGroupKFold on person_id",
+    "holdout_test_ratio": 0.15,
+    "cross_validation_folds": 5,
+    "identity_leakage_target": 0.0,
+    "hardware_target": "NVIDIA GeForce RTX 3050 6GB Laptop GPU / CPU Fallback",
+    "mixed_precision": true,
+    "batch_size": 32
+  }
+}

@@ -347,9 +347,10 @@ WHERE TABLE_SCHEMA = 'celeba_db'
 -- PART 8: LEAST-PRIVILEGE SECURITY CONFIGURATION
 -- ------------------------------------------------------------------------------
 -- Dedicated application service user with restricted permissions
--- (Replaces direct root usage for production security compliance)
-CREATE USER IF NOT EXISTS 'celeba_user'@'%' IDENTIFIED BY 'celeba_pass_2026';
-CREATE USER IF NOT EXISTS 'celeba_user'@'localhost' IDENTIFIED BY 'celeba_pass_2026';
+-- Production practice: Provide user credentials dynamically via environment variables or secret manager
+-- Default local configuration template:
+CREATE USER IF NOT EXISTS 'celeba_user'@'%' IDENTIFIED BY /* :MYSQL_PASSWORD */ 'celeba_pass_2026';
+CREATE USER IF NOT EXISTS 'celeba_user'@'localhost' IDENTIFIED BY /* :MYSQL_PASSWORD */ 'celeba_pass_2026';
 GRANT SELECT, INSERT, UPDATE, EXECUTE ON celeba_db.* TO 'celeba_user'@'%';
 GRANT SELECT, INSERT, UPDATE, EXECUTE ON celeba_db.* TO 'celeba_user'@'localhost';
 FLUSH PRIVILEGES;

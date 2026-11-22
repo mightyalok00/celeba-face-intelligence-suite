@@ -42,6 +42,8 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+.coverage
+.coverage.*
 
 # 5. Virtual Environments & Secret Configurations
 venv/

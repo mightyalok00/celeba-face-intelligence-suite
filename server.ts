@@ -83,8 +83,13 @@ function parseCsvLine(line: string): string[] {
 }
 
 function loadBenchmarkMetrics(): Record<string, string | number>[] {
-  const csvPath = path.join(PROJECT_ROOT, "reports", "model_benchmark_results.csv");
-  if (!fs.existsSync(csvPath)) {
+  const candidates = [
+    path.join(PROJECT_ROOT, "reports", "benchmarks", "production_benchmark.csv"),
+    path.join(PROJECT_ROOT, "reports", "benchmarks", "model_benchmark_results.csv"),
+    path.join(PROJECT_ROOT, "reports", "model_benchmark_results.csv"),
+  ];
+  const csvPath = candidates.find((p) => fs.existsSync(p)) || "";
+  if (!csvPath) {
     return [];
   }
   try {

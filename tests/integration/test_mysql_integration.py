@@ -81,4 +81,6 @@ def test_live_mysql_roundtrip_when_service_available():
         assert len(data) == 1
         assert data[0]["alive"] == 1
     except Exception as e:
-        pytest.skip(f"Live MySQL service not available at {host}: {e}; skipping live verification.")
+        if os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true":
+            pytest.fail(f"Live MySQL service is required in CI but failed to connect to {host}: {e}")
+        pytest.skip(f"Live MySQL service not available at {host}: {e}; skipping live verification in local dev.")

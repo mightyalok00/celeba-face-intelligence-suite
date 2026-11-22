@@ -151,13 +151,38 @@ def load_reproducibility_config() -> Dict[str, Any]:
     return {}
 
 
-def load_image_tensors(df: pd.DataFrame, target_size: Tuple[int, int] = (64, 64)) -> np.ndarray:
+def _generate_synthetic_fixture(target_size: Tuple[int, int], seed_str: str) -> np.ndarray:
+    """
+    Generates an explicit synthetic 3-channel face-like image fixture for isolated CI smoke tests.
+    Uses deterministic hash-based seed for reproducibility and realistic non-zero pixel distributions in [0.0, 1.0].
+    """
+    import hashlib
+
+    h = int(hashlib.sha256(seed_str.encode("utf-8")).hexdigest()[:8], 16)
+    rng = np.random.RandomState(h % (2**31 - 1))
+    canvas = np.zeros((3, target_size[0], target_size[1]), dtype=np.float32)
+    # Synthetic realistic facial skin tones
+    canvas[0, :, :] = rng.uniform(0.65, 0.90) + rng.normal(0, 0.05, target_size).astype(np.float32)
+    canvas[1, :, :] = rng.uniform(0.45, 0.70) + rng.normal(0, 0.05, target_size).astype(np.float32)
+    canvas[2, :, :] = rng.uniform(0.35, 0.60) + rng.normal(0, 0.05, target_size).astype(np.float32)
+    return np.clip(canvas, 0.0, 1.0)
+
+
+def load_image_tensors(
+    df: pd.DataFrame, target_size: Tuple[int, int] = (64, 64), allow_synthetic: bool = False
+) -> np.ndarray:
     """
     Loads actual cropped face images from img_align_celeba/ as float32 tensors (N, 3, H, W).
     Normalizes pixel intensities to [0.0, 1.0] matching production inference input distribution.
+
+    In production mode (allow_synthetic=False), enforces strict validation and raises
+    FileNotFoundError if any target image cannot be found or decoded.
+    In smoke mode (allow_synthetic=True), generates explicit synthetic fixtures with logged warning.
     """
     images_dir = PROJECT_ROOT / "img_align_celeba"
     tensors = []
+    missing_files: List[str] = []
+
     for img_name in df["image_id"]:
         base = Path(img_name).stem
         target_file = None
@@ -167,16 +192,27 @@ def load_image_tensors(df: pd.DataFrame, target_size: Tuple[int, int] = (64, 64)
                 target_file = cand
                 break
 
-        if target_file is not None:
+        if target_file is not None and target_file.exists():
             try:
                 with Image.open(target_file) as im:
                     im_resized = im.convert("RGB").resize(target_size, Image.Resampling.BILINEAR)
                     arr = np.array(im_resized, dtype=np.float32) / 255.0
                     tensors.append(np.transpose(arr, (2, 0, 1)))
-            except Exception:
-                tensors.append(np.zeros((3, target_size[0], target_size[1]), dtype=np.float32))
+            except Exception as exc:
+                if not allow_synthetic:
+                    raise ValueError(f"Corrupt or unreadable image file {target_file}: {exc}") from exc
+                tensors.append(_generate_synthetic_fixture(target_size, base))
         else:
-            tensors.append(np.zeros((3, target_size[0], target_size[1]), dtype=np.float32))
+            if not allow_synthetic:
+                missing_files.append(str(img_name))
+            else:
+                tensors.append(_generate_synthetic_fixture(target_size, base))
+
+    if missing_files:
+        raise FileNotFoundError(
+            f"Missing {len(missing_files)} required face image files in {images_dir}. "
+            f"Sample missing: {missing_files[:5]}. Strict production validation requires genuine image files."
+        )
 
     return np.stack(tensors)
 
@@ -213,7 +249,8 @@ def train_and_evaluate_all_models(sample_limit: int = 3000) -> Dict[str, Any]:
     groups = df["person_id"].values
 
     # Load actual face images as (N, 3, 64, 64) float32 tensors
-    X_images = load_image_tensors(df, target_size=(64, 64))
+    # Strict validation requires real images in production; synthetic fixtures allowed only in smoke tests
+    X_images = load_image_tensors(df, target_size=(64, 64), allow_synthetic=is_smoke_test)
 
     # Identity-disjoint holdout test split (15% test)
     gss = GroupShuffleSplit(n_splits=1, test_size=0.15, random_state=seed)
@@ -236,6 +273,7 @@ def train_and_evaluate_all_models(sample_limit: int = 3000) -> Dict[str, Any]:
     sgkf = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=seed)
 
     oof_xgb = np.zeros(n_train, dtype=np.float64)
+    oof_xgb_pix = np.zeros(n_train, dtype=np.float64)
     oof_ann = np.zeros(n_train, dtype=np.float64)
     oof_rnn = np.zeros(n_train, dtype=np.float64)
     oof_cnn = np.zeros(n_train, dtype=np.float64)
@@ -246,6 +284,7 @@ def train_and_evaluate_all_models(sample_limit: int = 3000) -> Dict[str, Any]:
     test_cnn_preds: List[np.ndarray] = []
     test_vit_preds: List[np.ndarray] = []
     test_xgb_preds: List[np.ndarray] = []
+    test_xgb_pix_preds: List[np.ndarray] = []
 
     trained_cnns: List[ResidualConv2DCNN] = []
     trained_vits: List[VisionTransformerClassifier] = []
@@ -265,11 +304,19 @@ def train_and_evaluate_all_models(sample_limit: int = 3000) -> Dict[str, Any]:
         X_f_tr_img = X_train_img[f_tr_idx]
         X_f_val_img = X_train_img[f_val_idx]
 
-        # 1. Gradient Tree Boosting (XGBoost on tabular attributes)
+        # 1a. Gradient Tree Boosting (XGBoost on 39 tabular attributes)
         clf_xgb = train_single_fold_xgboost(X_f_tr_meta, y_f_tr)
         p_val_xgb = clf_xgb.predict_proba(X_f_val_meta)[:, 1]
         oof_xgb[f_val_idx] = p_val_xgb
         test_xgb_preds.append(clf_xgb.predict_proba(X_test_f_meta)[:, 1])
+
+        # 1b. Gradient Tree Boosting (XGBoost on flattened raw image pixels)
+        X_f_tr_pix = X_f_tr_img.reshape(len(f_tr_idx), -1)
+        X_f_val_pix = X_f_val_img.reshape(len(f_val_idx), -1)
+        X_test_pix = X_test_img.reshape(n_test, -1)
+        clf_xgb_pix = train_single_fold_xgboost(X_f_tr_pix, y_f_tr)
+        oof_xgb_pix[f_val_idx] = clf_xgb_pix.predict_proba(X_f_val_pix)[:, 1]
+        test_xgb_pix_preds.append(clf_xgb_pix.predict_proba(X_test_pix)[:, 1])
 
         # 2. Genuine PyTorch ANN Training (Trained directly on face pixel tensors)
         model_ann = ANNClassifier(input_dim=12288).to(DEVICE)
@@ -316,6 +363,8 @@ def train_and_evaluate_all_models(sample_limit: int = 3000) -> Dict[str, Any]:
     p_test_vit = np.mean(test_vit_preds, axis=0)
     p_test_xgb_single = test_xgb_preds[0]
     p_test_xgb_bagged = np.mean(test_xgb_preds, axis=0)
+    p_test_xgb_pix = np.mean(test_xgb_pix_preds, axis=0)
+    p_maj = np.full(n_test, float(np.mean(y_train)))
 
     # 3. SLSQP Probability Blending strictly on Out-Of-Fold Validation Predictions
     weights = optimize_ensemble_weights([oof_xgb, oof_cnn, oof_vit], y_train)
@@ -329,8 +378,28 @@ def train_and_evaluate_all_models(sample_limit: int = 3000) -> Dict[str, Any]:
     p_test_ensemble_flip = blend_predictions([p_test_xgb_bagged, p_test_cnn_flip, p_test_vit_flip], weights)
     p_test_tta = np.clip(0.5 * p_test_ensemble + 0.5 * p_test_ensemble_flip, 0.0, 1.0)
 
-    # 5. Calculate Metrics for All 8 Architectures
+    # 5. Calculate Metrics for All Model Configurations
     evaluations = [
+        {
+            "Model Configuration": "Majority Class Baseline",
+            "Strategy": "Class Frequency Prior (Always Majority)",
+            "probs": p_maj,
+        },
+        {
+            "Model Configuration": "Single-Fold XGBoost (Tabular Attributes)",
+            "Strategy": "Identity-Disjoint Standard Split",
+            "probs": p_test_xgb_single,
+        },
+        {
+            "Model Configuration": "5-Fold Bagged XGBoost (Tabular Attributes)",
+            "Strategy": "5-Fold Stratified Group Bagging",
+            "probs": p_test_xgb_bagged,
+        },
+        {
+            "Model Configuration": "XGBoost (Raw Image Pixels)",
+            "Strategy": "Flattened Pixel Intensity Boosting",
+            "probs": p_test_xgb_pix,
+        },
         {
             "Model Configuration": "Artificial Neural Network (ANN)",
             "Strategy": "Standard Split",
@@ -350,16 +419,6 @@ def train_and_evaluate_all_models(sample_limit: int = 3000) -> Dict[str, Any]:
             "Model Configuration": "Vision Transformer (ViT)",
             "Strategy": "Patch-16 Multi-Head Self-Attention",
             "probs": p_test_vit,
-        },
-        {
-            "Model Configuration": "Single-Fold XGBoost",
-            "Strategy": "Identity-Disjoint Standard Split",
-            "probs": p_test_xgb_single,
-        },
-        {
-            "Model Configuration": "5-Fold Bagged XGBoost",
-            "Strategy": "5-Fold Stratified Group Bagging",
-            "probs": p_test_xgb_bagged,
         },
         {
             "Model Configuration": "5-Fold Ensemble (XGB+CNN+ViT)",
@@ -424,7 +483,6 @@ def train_and_evaluate_all_models(sample_limit: int = 3000) -> Dict[str, Any]:
     torch.save(prod_vit.state_dict(), checkpoints_dir / "vision_transformer.pt")
     torch.save(prod_ann.state_dict(), checkpoints_dir / "ann.pt")
     torch.save(prod_rnn.state_dict(), checkpoints_dir / "bilstm.pt")
-    torch.save(prod_rnn.state_dict(), checkpoints_dir / "bilstm.pt")
 
     # 7. Save Reports: Isolate CI Smoke Test Reports from Production Benchmarks
     benchmarks_dir = PROJECT_ROOT / "reports" / "benchmarks"
@@ -482,5 +540,4 @@ if __name__ == "__main__":
     for r in res["results"]:
         acc_str = str(r["Accuracy"])
         f1_val = float(r["F1-Score"])
-        print(f"  • {r['Model Configuration']}: Accuracy={acc_str}, F1={f1_val:.4f}")
         print(f"  • {r['Model Configuration']}: Accuracy={acc_str}, F1={f1_val:.4f}")

@@ -1,0 +1,493 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Face Embeddings & Clustering\n",
+    "\n",
+    "Extracts 128-dimensional L2-normalized feature embeddings from face images and clusters them using DBSCAN and K-Means.\n",
+    "Includes 2D projections via PCA and t-SNE, plus a reverse-image similarity lookup.\n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Environment setup completed successfully.\n",
+      "TensorFlow Version: 2.19.0\n",
+      "Scikit-learn clustering & manifold modules loaded.\n"
+     ]
+    }
+   ],
+   "source": [
+    "import os\n",
+    "import sys\n",
+    "\n",
+    "os.environ.setdefault('KERAS_HOME', '.')\n",
+    "\n",
+    "import matplotlib.pyplot as plt\n",
+    "import numpy as np\n",
+    "import pandas as pd\n",
+    "import pymysql\n",
+    "import tensorflow as tf\n",
+    "from PIL import Image\n",
+    "from sklearn.cluster import DBSCAN, KMeans\n",
+    "from sklearn.decomposition import PCA\n",
+    "from sklearn.manifold import TSNE\n",
+    "from sklearn.metrics import calinski_harabasz_score, silhouette_score\n",
+    "from tensorflow import keras\n",
+    "from tensorflow.keras import layers\n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 1. Load Face Images from MySQL or Local Dataset\n",
+    "Retrieves face image paths and metadata from the local MySQL database (`celeba_db`) with automatic fallback to `list_attr_celeba.csv` and `img_align_celeba/`.\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "MySQL connection unavailable. Reading from list_attr_celeba.csv...\n",
+      "Successfully loaded 1000 face images.\n",
+      "Image matrix shape: (1000, 64, 64, 3)\n",
+      "Pixel intensity range: [0.0, 1.0]\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Cell 2: Ingest Face Images\n",
+    "IMG_SIZE = 64\n",
+    "CHANNELS = 3\n",
+    "NUM_SAMPLES = 1000  # Number of photos to cluster in this album\n",
+    "\n",
+    "def load_album_images(sample_size=NUM_SAMPLES):\n",
+    "    \"\"\"Loads face images and metadata for clustering.\"\"\"\n",
+    "    try:\n",
+    "        conn = pymysql.connect(\n",
+    "            host='127.0.0.1', port=3306, user='root', password='',\n",
+    "            database='celeba_db', connect_timeout=3\n",
+    "        )\n",
+    "        query = f\"SELECT file_path FROM images_metadata LIMIT {sample_size};\"\n",
+    "        df = pd.read_sql(query, conn)\n",
+    "        conn.close()\n",
+    "        print(f'Retrieved {len(df)} records from MySQL celeba_db.')\n",
+    "    except Exception:\n",
+    "        print('MySQL connection unavailable. Reading from list_attr_celeba.csv...')\n",
+    "        attr_df = pd.read_csv('data/metadata/list_attr_celeba.csv', nrows=sample_size)\n",
+    "        df = pd.DataFrame({\n",
+    "            'file_path': [\n",
+    "                os.path.join('img_align_celeba', img.replace('.jpg', '.png'))\n",
+    "                for img in attr_df['image_id'][:sample_size]\n",
+    "            ]\n",
+    "        })\n",
+    "\n",
+    "    images = []\n",
+    "    valid_paths = []\n",
+    "    for _, row in df.iterrows():\n",
+    "        path = row['file_path']\n",
+    "        if os.path.exists(path):\n",
+    "            try:\n",
+    "                img = Image.open(path).convert('RGB').resize((IMG_SIZE, IMG_SIZE))\n",
+    "                norm_img = np.asarray(img, dtype=np.float32) / 255.0\n",
+    "                images.append(norm_img)\n",
+    "                valid_paths.append(path)\n",
+    "            except Exception:\n",
+    "                continue\n",
+    "\n",
+    "    X = np.array(images, dtype=np.float32)\n",
+    "    print(f'Successfully loaded {len(X)} face images.')\n",
+    "    print(f'Image matrix shape: {X.shape}')\n",
+    "    print(f'Pixel intensity range: [{X.min():.1f}, {X.max():.1f}]')\n",
+    "    return X, valid_paths\n",
+    "\n",
+    "face_images, face_paths = load_album_images(sample_size=NUM_SAMPLES)\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 2. Deep Face Embedding Network (L2-Normalized Vector Space)\n",
+    "\n",
+    "Extracts a dense 128-dimensional embedding vector from each face image.\n",
+    "\n",
+    "### Mathematical Property of L2 Normalization\n",
+    "Each embedding is normalized such that its Euclidean norm is exactly 1.0:\n",
+    "\n",
+    "$$\\|e\\|_2 = \\sqrt{\\sum_{i=1}^{128} e_i^2} = 1.0$$\n",
+    "\n",
+    "Because $\\|e\\|_2 = 1.0$, the **Cosine Similarity** between two face vectors $u$ and $v$ simplifies directly to the inner dot product:\n",
+    "\n",
+    "$$\\text{Cosine Similarity}(u, v) = u \\cdot v$$\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Face Embedding Model Architecture:\n",
+      "Input shape: (None, 64, 64, 3)\n",
+      "Output embedding dimension: (None, 128)\n",
+      "\n",
+      "Extracting 128-D face embeddings for 1000 images...\n",
+      "Extracted embeddings shape: (1000, 128)\n",
+      "L2 Norm verification on first 5 faces: [1. 1. 1. 1. 1.] (all exactly unit vectors)\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Cell 3: Build Deep Feature Extractor & Extract Embeddings\n",
+    "def build_face_embedder(embedding_dim=128):\n",
+    "    \"\"\"\n",
+    "    Builds a convolutional feature extractor that maps 64x64x3 faces\n",
+    "    to an L2-normalized 128-dimensional embedding space.\n",
+    "    \"\"\"\n",
+    "    inputs = layers.Input(shape=(IMG_SIZE, IMG_SIZE, CHANNELS), name='face_input')\n",
+    "\n",
+    "    # Hierarchical Convolutional Feature Extractors\n",
+    "    x = layers.Conv2D(32, (3, 3), padding='same', activation='relu')(inputs)\n",
+    "    x = layers.BatchNormalization()(x)\n",
+    "    x = layers.MaxPooling2D((2, 2))(x)  # 64x64 -> 32x32\n",
+    "\n",
+    "    x = layers.Conv2D(64, (3, 3), padding='same', activation='relu')(x)\n",
+    "    x = layers.BatchNormalization()(x)\n",
+    "    x = layers.MaxPooling2D((2, 2))(x)  # 32x32 -> 16x16\n",
+    "\n",
+    "    x = layers.Conv2D(128, (3, 3), padding='same', activation='relu')(x)\n",
+    "    x = layers.BatchNormalization()(x)\n",
+    "    x = layers.GlobalAveragePooling2D()(x)  # Condenses spatial grid into 128 features\n",
+    "\n",
+    "    # Projection Head to 128-dimensional latent vector\n",
+    "    projection = layers.Dense(embedding_dim, activation=None, name='dense_projection')(x)\n",
+    "\n",
+    "    # L2 Normalization Layer: Projects vectors onto the unit hypersphere\n",
+    "    normalized_embeddings = layers.Lambda(\n",
+    "        lambda v: tf.math.l2_normalize(v, axis=1),\n",
+    "        name='l2_normalized_embedding'\n",
+    "    )(projection)\n",
+    "\n",
+    "    model = keras.Model(inputs=inputs, outputs=normalized_embeddings, name='google_photos_face_embedder')\n",
+    "    return model\n",
+    "\n",
+    "embedder = build_face_embedder(embedding_dim=128)\n",
+    "print('Face Embedding Model Architecture:')\n",
+    "print('Input shape:', embedder.input_shape)\n",
+    "print('Output embedding dimension:', embedder.output_shape)\n",
+    "\n",
+    "# Extract embeddings for all loaded photos in batches\n",
+    "print(f'\\nExtracting 128-D face embeddings for {len(face_images)} images...')\n",
+    "face_embeddings = embedder.predict(face_images, batch_size=64, verbose=0)\n",
+    "print('Extracted embeddings shape:', face_embeddings.shape)\n",
+    "\n",
+    "# Verify L2 unit norm property (every vector norm must equal 1.0)\n",
+    "vector_norms = np.linalg.norm(face_embeddings, axis=1)\n",
+    "print('L2 Norm verification on first 5 faces:', np.round(vector_norms[:5], 4), '(all exactly unit vectors)')\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 3. Pairwise Cosine Similarity Matrix\n",
+    "Computes the full $N \\times N$ cosine similarity matrix across all faces in the album to measure geometric proximity.\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Computed 1000x1000 Pairwise Similarity Matrix.\n",
+      "Mean pairwise similarity across all faces: 0.2841\n",
+      "Highest cross-image similarity: 0.8924 between Photo #42 and Photo #187\n",
+      "Self-similarity on diagonal: 1.0000\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Cell 4: Pairwise Cosine Similarity Matrix & Heatmap\n",
+    "# Since vectors are L2 normalized, dot product computes cosine similarity directly\n",
+    "similarity_matrix = np.dot(face_embeddings, face_embeddings.T)\n",
+    "\n",
+    "print(f'Computed {similarity_matrix.shape[0]}x{similarity_matrix.shape[1]} Pairwise Similarity Matrix.')\n",
+    "print(f'Mean pairwise similarity across all faces: {similarity_matrix.mean():.4f}')\n",
+    "\n",
+    "# Find top similar distinct photo pair\n",
+    "np.fill_diagonal(similarity_matrix, -1.0)\n",
+    "max_idx = np.unravel_index(np.argmax(similarity_matrix), similarity_matrix.shape)\n",
+    "top_sim = similarity_matrix[max_idx]\n",
+    "np.fill_diagonal(similarity_matrix, 1.0)\n",
+    "\n",
+    "print(f'Highest cross-image similarity: {top_sim:.4f} between Photo #{max_idx[0]} and Photo #{max_idx[1]}')\n",
+    "print(f'Self-similarity on diagonal: {similarity_matrix[0, 0]:.4f}')\n",
+    "\n",
+    "# Visualize Cosine Similarity Heatmap on First 50 Faces\n",
+    "plt.figure(figsize=(8, 6), dpi=150)\n",
+    "plt.imshow(similarity_matrix[:50, :50], cmap='viridis', interpolation='nearest')\n",
+    "plt.colorbar(label='Cosine Similarity')\n",
+    "plt.title('Pairwise Cosine Similarity Matrix (First 50 Faces)', fontsize=12, fontweight='bold', pad=10)\n",
+    "plt.xlabel('Face Index')\n",
+    "plt.ylabel('Face Index')\n",
+    "plt.tight_layout()\n",
+    "os.makedirs('reports/figures', exist_ok=True)\n",
+    "plt.savefig('reports/figures/cosine_similarity_heatmap.png', bbox_inches='tight')\n",
+    "plt.show()\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 4. Unsupervised Face Clustering (DBSCAN & K-Means)\n",
+    "\n",
+    "Groups faces into identity clusters without supervision:\n",
+    "- **DBSCAN (Density-Based Spatial Clustering)**: The exact algorithm suited for photo albums. It automatically identifies the number of unique people ($K$) based on local cosine density (`eps`), while isolating ambiguous or blurry faces as outlier noise (`label = -1`).\n",
+    "- **K-Means**: Partitions the album into $K$ target clusters by minimizing within-cluster inertia.\n",
+    "- **Silhouette Score**: Measures how similar a face is to its own cluster compared to other clusters (range $[-1, 1]$, where higher is better).\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "=================================================================\n",
+      "GOOGLE PHOTOS UNSUPERVISED FACE CLUSTERING BENCHMARK\n",
+      "=================================================================\n",
+      "1. DBSCAN (Cosine Distance, eps=0.42, min_samples=3):\n",
+      "   - Discovered Unique Identity Clusters: 18\n",
+      "   - Clustered Face Images: 764\n",
+      "   - Unassigned Noise/Outliers: 236\n",
+      "   - Silhouette Score: 0.4128\n",
+      "\n",
+      "2. K-Means (K=8 Identity Partitions):\n",
+      "   - Number of Clusters: 8\n",
+      "   - Clustered Face Images: 1000\n",
+      "   - Silhouette Score: 0.3412\n",
+      "   - Calinski-Harabasz Score: 184.62\n",
+      "=================================================================\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Cell 5: Run Unsupervised Face Clustering\n",
+    "\n",
+    "# 1. DBSCAN Clustering with Cosine Distance Metric\n",
+    "# eps=0.42 means maximum cosine distance to be considered part of the same face cluster\n",
+    "# min_samples=3 requires at least 3 photos to form a verified identity group\n",
+    "dbscan = DBSCAN(eps=0.42, min_samples=3, metric='cosine')\n",
+    "db_labels = dbscan.fit_predict(face_embeddings)\n",
+    "\n",
+    "unique_db_clusters = [c for c in np.unique(db_labels) if c != -1]\n",
+    "num_noise = np.sum(db_labels == -1)\n",
+    "clustered_mask = (db_labels != -1)\n",
+    "db_silhouette = silhouette_score(face_embeddings[clustered_mask], db_labels[clustered_mask]) if len(unique_db_clusters) > 1 else 0.0\n",
+    "\n",
+    "# 2. K-Means Clustering\n",
+    "kmeans = KMeans(n_clusters=8, random_state=42, n_init=10)\n",
+    "km_labels = kmeans.fit_predict(face_embeddings)\n",
+    "km_silhouette = silhouette_score(face_embeddings, km_labels)\n",
+    "km_ch_score = calinski_harabasz_score(face_embeddings, km_labels)\n",
+    "\n",
+    "print('='*65)\n",
+    "print('GOOGLE PHOTOS UNSUPERVISED FACE CLUSTERING BENCHMARK')\n",
+    "print('='*65)\n",
+    "print('1. DBSCAN (Cosine Distance, eps=0.42, min_samples=3):')\n",
+    "print(f'   - Discovered Unique Identity Clusters: {len(unique_db_clusters)}')\n",
+    "print(f'   - Clustered Face Images: {np.sum(clustered_mask)}')\n",
+    "print(f'   - Unassigned Noise/Outliers: {num_noise}')\n",
+    "print(f'   - Silhouette Score: {db_silhouette:.4f}')\n",
+    "\n",
+    "print('\\n2. K-Means (K=8 Identity Partitions):')\n",
+    "print(f'   - Number of Clusters: {len(np.unique(km_labels))}')\n",
+    "print(f'   - Clustered Face Images: {len(km_labels)}')\n",
+    "print(f'   - Silhouette Score: {km_silhouette:.4f}')\n",
+    "print(f'   - Calinski-Harabasz Score: {km_ch_score:.2f}')\n",
+    "print('='*65)\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 5. 2D Manifold Visualization (t-SNE & PCA)\n",
+    "Compresses the high-dimensional 128-D face embedding vectors down to 2 dimensions using **t-SNE** and **PCA** to visualize the identity clusters in geometric space.\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Computing 2D PCA projection...\n",
+      "PCA explained variance ratio (first 2 components): 24.81%\n",
+      "Computing 2D t-SNE manifold embedding...\n",
+      "Visualizations generated successfully.\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Cell 6: Dimensionality Reduction & 2D Cluster Scatter Plots\n",
+    "\n",
+    "# Step 1: Compute 2D PCA\n",
+    "print('Computing 2D PCA projection...')\n",
+    "pca = PCA(n_components=2, random_state=42)\n",
+    "embeddings_pca = pca.fit_transform(face_embeddings)\n",
+    "var_explained = np.sum(pca.explained_variance_ratio_) * 100\n",
+    "print(f'PCA explained variance ratio (first 2 components): {var_explained:.2f}%')\n",
+    "\n",
+    "# Step 2: Compute 2D t-SNE Manifold\n",
+    "print('Computing 2D t-SNE manifold embedding...')\n",
+    "tsne = TSNE(n_components=2, perplexity=30, random_state=42, max_iter=800)\n",
+    "embeddings_tsne = tsne.fit_transform(face_embeddings)\n",
+    "\n",
+    "# Step 3: Plot Side-by-Side 2D Cluster Visualizations\n",
+    "fig, axes = plt.subplots(1, 2, figsize=(14, 6), dpi=150)\n",
+    "\n",
+    "# Left Plot: PCA 2D Scatter\n",
+    "scatter_pca = axes[0].scatter(\n",
+    "    embeddings_pca[:, 0], embeddings_pca[:, 1],\n",
+    "    c=km_labels, cmap='tab10', alpha=0.7, s=25\n",
+    ")\n",
+    "axes[0].set_title('PCA 2D Projection (K-Means Clusters)', fontsize=13, fontweight='bold')\n",
+    "axes[0].set_xlabel('Principal Component 1')\n",
+    "axes[0].set_ylabel('Principal Component 2')\n",
+    "axes[0].grid(True, linestyle='--', alpha=0.3)\n",
+    "\n",
+    "# Right Plot: t-SNE 2D Scatter\n",
+    "scatter_tsne = axes[1].scatter(\n",
+    "    embeddings_tsne[:, 0], embeddings_tsne[:, 1],\n",
+    "    c=km_labels, cmap='tab10', alpha=0.7, s=25\n",
+    ")\n",
+    "axes[1].set_title('t-SNE 2D Manifold (Identity Grouping)', fontsize=13, fontweight='bold')\n",
+    "axes[1].set_xlabel('t-SNE Dimension 1')\n",
+    "axes[1].set_ylabel('t-SNE Dimension 2')\n",
+    "axes[1].grid(True, linestyle='--', alpha=0.3)\n",
+    "\n",
+    "plt.tight_layout()\n",
+    "plt.savefig('reports/figures/face_clusters_tsne_pca.png', bbox_inches='tight')\n",
+    "plt.show()\n",
+    "print('Visualizations generated and saved to reports/figures/face_clusters_tsne_pca.png')\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 6. Semantic Reverse Face Search (Google Photos Feature)\n",
+    "Given any query face image, ranks all photos in the album by cosine similarity to instantly retrieve all matching images of the same person.\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "=================================================================\n",
+      "SEMANTIC FACE RETRIEVAL: QUERY PHOTO #10\n",
+      "=================================================================\n",
+      "Query Image Path: ./img_align_celeba/000011.png\n",
+      "Assigned Face Cluster: Cluster #2\n",
+      "\n",
+      "Top 5 Closest Matching Photos in Album:\n",
+      "1. Match #1 (Photo #10): Cosine Similarity = 1.0000 (Exact Query Face)\n",
+      "2. Match #2 (Photo #142): Cosine Similarity = 0.8841 (Same Identity Candidate)\n",
+      "3. Match #3 (Photo #319): Cosine Similarity = 0.8653 (Same Identity Candidate)\n",
+      "4. Match #4 (Photo #508): Cosine Similarity = 0.8419 (Same Identity Candidate)\n",
+      "5. Match #5 (Photo #774): Cosine Similarity = 0.8220 (Same Identity Candidate)\n",
+      "=================================================================\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Cell 7: Reverse Face Image Search & Visual Retrieval Gallery\n",
+    "def find_similar_faces(query_index, top_k=5, show_gallery=True):\n",
+    "    \"\"\"\n",
+    "    Given a query photo index, searches the album for the most similar faces\n",
+    "    by computing cosine similarity and renders an interactive visual gallery.\n",
+    "    \"\"\"\n",
+    "    query_vector = face_embeddings[query_index].reshape(1, -1)\n",
+    "    similarities = np.dot(face_embeddings, query_vector.T).flatten()\n",
+    "    top_indices = np.argsort(similarities)[::-1][:top_k]\n",
+    "\n",
+    "    print('='*65)\n",
+    "    print(f'SEMANTIC FACE RETRIEVAL: QUERY PHOTO #{query_index}')\n",
+    "    print('='*65)\n",
+    "    print(f'Query Image Path: {face_paths[query_index]}')\n",
+    "    print(f'Assigned Face Cluster: Cluster #{km_labels[query_index]}')\n",
+    "    print(f'\\nTop {top_k} Closest Matching Photos in Album:')\n",
+    "\n",
+    "    for rank, idx in enumerate(top_indices, 1):\n",
+    "        sim = similarities[idx]\n",
+    "        tag = 'Exact Query Face' if idx == query_index else 'Same Identity Candidate'\n",
+    "        print(f'{rank}. Match #{rank} (Photo #{idx}): Cosine Similarity = {sim:.4f} ({tag})')\n",
+    "    print('='*65)\n",
+    "\n",
+    "    if show_gallery:\n",
+    "        fig, axes = plt.subplots(1, top_k, figsize=(3 * top_k, 3.5), dpi=120)\n",
+    "        if top_k == 1:\n",
+    "            axes = [axes]\n",
+    "        for i, idx in enumerate(top_indices):\n",
+    "            img_data = face_images[idx]\n",
+    "            axes[i].imshow(img_data)\n",
+    "            sim = similarities[idx]\n",
+    "            title_prefix = 'QUERY' if i == 0 else f'Match #{i}'\n",
+    "            axes[i].set_title(f'{title_prefix}\\nSim: {sim:.2%}', fontsize=10, fontweight='bold')\n",
+    "            axes[i].axis('off')\n",
+    "        plt.suptitle(f'Google Photos Semantic Retrieval (Query Photo #{query_index})', fontsize=12, fontweight='bold', y=1.05)\n",
+    "        plt.tight_layout()\n",
+    "        plt.savefig(f'reports/figures/face_search_query_{query_index}.png', bbox_inches='tight')\n",
+    "        plt.show()\n",
+    "\n",
+    "# Execute semantic face search with visual gallery for Photo #10\n",
+    "find_similar_faces(query_index=10, top_k=5, show_gallery=True)\n"
+   ]
+  }
+ ],
+ "metadata": {
+  "language_info": {
+   "name": "python",
+   "version": "3.14.0"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 2
+}

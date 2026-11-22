@@ -19,6 +19,6 @@
 - **ROC-AUC**: 0.9412
 - **PR-AUC**: 0.9320
 
-## Robustness & Caveats
+## Practical Limitations & Caveats
 - Self-attention provides strong invariance to localized facial accessories (e.g. glasses, hats) compared to standard CNN kernels.
 - Higher compute requirements than classical tree models; batching recommended for real-time edge deployment.

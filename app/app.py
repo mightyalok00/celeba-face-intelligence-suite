@@ -21,7 +21,7 @@ except ImportError:
     sys.exit(1)
 
 # ------------------------------------------------------------------------------
-# 0. DIRECTORY RESOLUTION (Works seamlessly whether launched from app/ or root)
+# 0. DIRECTORY RESOLUTION (Resolves project root whether launched from app/ or root)
 # ------------------------------------------------------------------------------
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(CURRENT_DIR) if os.path.basename(CURRENT_DIR) == 'app' else CURRENT_DIR
@@ -639,7 +639,7 @@ def main():
             </div>
             """
 
-        # Double the cards for a seamless 100% infinite continuous loop
+        # Double the cards for an infinite continuous loop
         full_track_html = cards_html + cards_html
 
         st.markdown(f"""

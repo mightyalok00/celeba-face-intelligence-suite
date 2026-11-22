@@ -20,8 +20,8 @@ from sklearn.metrics import (
 
 def compute_comprehensive_metrics(y_true: Any, y_prob: Any) -> Dict[str, Any]:
     """
-    Computes full spectrum of classification metrics from ground truth labels and probabilities.
-    Robustly handles degenerate edge cases (all 0s or all 1s).
+    Computes classification metrics from ground truth labels and predicted probabilities.
+    Handles degenerate edge cases (all 0s or all 1s).
     """
     y_true_arr = np.asarray(y_true, dtype=np.int32).flatten()
     y_prob_arr = np.asarray(y_prob, dtype=np.float64).flatten()

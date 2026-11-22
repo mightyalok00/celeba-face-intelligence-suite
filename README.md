@@ -2,27 +2,14 @@
 
 An end-to-end computer vision and multimodal intelligence platform that classifies facial attributes on the **CelebA (CelebFaces Attributes)** dataset. The system integrates a **Google AI Studio Multimodal Reasoning App** (`google-generativeai` / Gemini 1.5 Flash), local PyTorch deep neural networks (**ANN, Deeper Residual Conv2D CNN, Spatial BiLSTM, Vision Transformer**), gradient boosted decision trees (**XGBoost**), **MySQL** relational database (`celeba_db`) with connection pooling, and **5-Fold Stratified Cross-Validation with 5-View Test-Time Augmentation (TTA)**.
 
-## System Quality & Audit Scorecard: Upgraded to 9.4+ / 10
+## Validation status
 
-| Evaluation Dimension | Audited Score | Target Rating | Upgraded Implementation & Empirical Evidence |
-| :------------------- | :-----------: | :-----------: | :------------------------------------------- |
-| **Project Concept & Scope** | 9.5 / 10 | 9.5 / 10 | Zero scope reduction. Added **Google AI Studio Multimodal Application** while preserving all local PyTorch architectures, classical baselines, MySQL database, MCP servers, and Streamlit dashboard. |
-| **Model Architecture** | 9.0 / 10 | **9.4 / 10** | Genuine PyTorch image architectures: 4-Stage Residual Conv2D CNN (`ResidualConv2DCNN`), Vision Transformer (`VisionTransformerClassifier`), Spatial BiLSTM (`SpatialBiLSTMClassifier`), and Dense ANN (`ANNClassifier`), all featuring dual-mode tensor adapters. |
-| **Database Design & Integration** | 8.8 / 10 | **9.3 / 10** | Thread-safe connection pooling (`ConnectionPool`) with liveness validation (ping-on-acquire), auto-reconnect, and strict parameterized SQL. Removed hardcoded passwords. Table whitelisting and regex sanitization in Node.js MCP server. |
-| **Applications & UI** | 9.0 / 10 | **9.4 / 10** | **Google AI Studio Face Intelligence Engine** (`app/google_ai_studio_app.py`, Gemini 1.5 Flash zero-shot demographic, emotion, attribute detection with structured JSON schemas) + Streamlit neural inference telemetry dashboard. |
-| **Documentation** | 8.7 / 10 | **9.4 / 10** | Comprehensive [Google AI Studio Guide](docs/GOOGLE_AI_STUDIO_GUIDE.md), formal machine learning Model Cards (`reports/model_cards/`), dataset manifest with SHA256 checksums, and algorithmic fairness audit report. |
-| **ML Evaluation Reliability (P0)** | 5.0 / 10 | **9.3 / 10** | **RESOLVED P0**: Genuine PyTorch neural network training loops (AdamW, BCEWithLogitsLoss). Zero-leakage fold-specific standardization. Real saved checkpoints (`models/checkpoints/*.pt`) loaded directly by `ModelInferenceEngine`. 5-view image-based TTA. |
-| **Code Quality & Security (P1/P2)** | 8.0 / 10 | **9.3 / 10** | **RESOLVED P1/P2**: Environment-variable credential enforcement, parameterized queries, Node.js MCP table whitelist. Strict typing passing MyPy with zero issues across 28 files, Ruff check passed, and zero Bandit security issues. |
-| **Testing & CI/CD (P1)** | 8.2 / 10 | **9.3 / 10** | 36 comprehensive tests spanning `tests/unit/`, `tests/integration/`, `tests/security/`, and `tests/end_to_end/` achieving **92% core code coverage**. Automated GitHub Actions CI/CD with full training execution. |
-| **Reproducibility (P1)** | 7.8 / 10 | **9.3 / 10** | **RESOLVED P1**: Exact evaluation parity between documentation, `production_benchmark.csv`, and `reports/model_benchmark_results.csv`. Centralized `reproducibility/config.yaml`, exact lockfile, and identity-disjoint split manifest. |
-| **OVERALL RATING** | **7.7 / 10** | **9.3–9.5 / 10** | **9.4 / 10: All 7 critical audit weaknesses resolved with verifiable empirical evidence.** |
-
----
+GitHub Actions runs static analysis, security checks, tests and training smoke checks. A successful workflow does not establish production model accuracy. The committed benchmark is a historical experiment, not an independently reproduced result. Image availability, evaluation modality and dataset provenance must be established before interpreting metrics.
 
 ## Workspace Structure
 
 ```text
-D:\scan\
+
 ├── .github\                                  # GitHub configuration & automation
 │   └── workflows\
 │       └── run_pipeline.yml                  # GitHub Actions CI/CD with audited run history
@@ -130,7 +117,7 @@ D:\scan\
 │       ├── __init__.py                       # Preprocessing package marker
 │       └── image_processor.ipynb             # Resizing, normalization & standardization
 │
-├── tests\                                    # Comprehensive test suite (92% code coverage)
+├── tests\                                    # Automated test suite
 │   ├── conftest.py                           # Pytest fixtures and mock isolation
 │   ├── unit\                                 # Unit tests for architectures, pool, metrics
 │   ├── integration\                          # Integration tests for MySQL, Streamlit, models
@@ -159,9 +146,8 @@ The project benchmarks individual architectures and combines the top models via 
 
 ### 1. XGBoost (Extreme Gradient Boosted Trees)
 
-* Constructs second-order gradient boosted ensembles directly over standardized pixel features.
-* Exploits pre-aligned facial landmarks in CelebA to make thresholded decision cuts on mouth and tooth coordinates.
-* Achieves **89.87%** test accuracy and **0.9181** precision with 5-fold bagging.
+* Constructs second-order gradient boosted ensembles over tabular features.
+* Uses annotated attributes in the Python benchmark; this is not an image-only baseline.
 
 ### 2. Deeper Multi-Block Residual CNN with In-Model Augmentation
 
@@ -175,18 +161,18 @@ The project benchmarks individual architectures and combines the top models via 
 
 * **Patch Embedding**: Partitions $64 \times 64 \times 3$ facial images into sixteen $16 \times 16$ non-overlapping patches, projected linearly into a latent embedding space with 1D learnable position embeddings.
 * **Transformer Encoder Stack**: 6 stacked transformer blocks utilizing multi-head self-attention (8 attention heads) and GeLU MLP blocks with residual skip paths.
-* **Global Facial Context**: Discovers long-range spatial correlations across eye, nose, and mouth landmarks simultaneously without 2D convolution constraints (achieves **90.25%** test accuracy).
+* **Global Facial Context**: Discovers long-range spatial correlations across eye, nose, and mouth landmarks simultaneously without 2D convolution constraints.
 
 ### 4. Spatial Recurrent Neural Network (Bidirectional LSTM)
 
 * **Sequential Spatial Slicing**: Extracts horizontal row sequences across the face canvas ($64$ time steps of $192$ feature dimensions).
-* **Bidirectional Sequence Modeling**: 2 stacked BiLSTM layers ($128$ hidden units) capturing progressive spatial transitions from forehead down to chin landmarks (**86.10%** test accuracy).
+* **Bidirectional Sequence Modeling**: 2 stacked BiLSTM layers ($128$ hidden units) capturing progressive spatial transitions from forehead down to chin landmarks.
 
 ### 5. ANN (Artificial Neural Network / Multi-Layer Perceptron)
 
 * Flattens the $64 \times 64 \times 3$ image into a 1D vector of 12,288 inputs.
 * Two fully connected layers (128 and 64 neurons) with ReLU activations and Dropout (0.3).
-* Serves as a baseline model without 2D spatial bias ($77.87\%$ test accuracy standalone).
+* Serves as a baseline model without 2D spatial bias.
 
 ### 6. Identity-Disjoint Stratified GroupKFold (Preventing Data & Identity Leakage)
 
@@ -199,7 +185,7 @@ $$\text{Identities}(\mathcal{D}_{\text{train}}^{(k)}) \cap \text{Identities}(\ma
 
 $$P_{\text{TTA}}(X) = \frac{1}{2} \left[ P(X) + P(\text{flip}_{\text{horizontal}}(X)) \right]$$
 
-* **Outcome**: Blending 5-Fold Bagged XGBoost with Augmented CNN and ViT under TTA achieves peak precision of **93.85%** and test accuracy of **91.85%**.
+* **Outcome**: See the historical benchmark below; image-only and attribute-based results are not directly comparable.
 
 ### 7. Google Photos Engine: Deep Face Embeddings & Clustering
 
@@ -259,7 +245,7 @@ lr_scheduler = keras.callbacks.ReduceLROnPlateau(
 
 ## Database Integration (MySQL & CSV Fallback)
 
-1. **Start the Database Service**: Run `scripts/start_mysql.bat` to launch the standalone MySQL Server daemon (or run `D:\MySQL\bin\mysqld.exe --datadir="D:\scan\mysql_data"` directly).
+1. **Start the Database Service**: Run `scripts/start_mysql.bat` to launch the standalone MySQL Server daemon (or run `D:\MySQL\bin\mysqld.exe --datadir="mysql_data"` directly).
 2. **Initialize Schema & Load Data**: Execute `database/celeba_db_setup.sql` in MySQL Workbench to create `celeba_db`, wire foreign keys, and generate `celeba_combined_dataset`. Run `database/celeba_queries_and_analytics.sql` for join operations, duplicate handling, and analytics.
 3. **Automatic Fallback**: If the MySQL service is offline, all notebooks automatically read directly from `data/metadata/list_attr_celeba.csv` and `img_align_celeba/`, ensuring uninterrupted execution.
 
@@ -304,7 +290,7 @@ pip install -r requirements.txt
 
 This project includes custom, zero-dependency Node.js MCP servers that expose the local MySQL database and Google Photos APIs directly to Antigravity AI agents:
 
-### 1. MySQL MCP Server (`D:\scan\mcp\mysql_mcp_server.mjs`)
+### 1. MySQL MCP Server (`mcp\mysql_mcp_server.mjs`)
 
 Enables AI agents to query and inspect the underlying `celeba_db` database via standard I/O:
 
@@ -313,7 +299,7 @@ Enables AI agents to query and inspect the underlying `celeba_db` database via s
 * **`mysql_describe_table`**: Inspect column data types, nullability, keys, and default values.
 * **`mysql_get_celebrity_stats`**: Instant high-level count of celebrities, face metadata, attributes, and identity mappings.
 
-### 2. Google Photos MCP Server (`D:\scan\mcp\google_photos_mcp_server.mjs`)
+### 2. Google Photos MCP Server (`mcp\google_photos_mcp_server.mjs`)
 
 Enables bidirectional synchronization between local CelebA face clusters and Google Photos:
 
@@ -338,7 +324,7 @@ Both servers are pre-registered in your Antigravity configuration:
         "MYSQL_HOST": "127.0.0.1",
         "MYSQL_PORT": "3306",
         "MYSQL_USER": "celeba_user",
-        "MYSQL_PASSWORD": "celeba_pass_2026",
+        "MYSQL_PASSWORD": "<YOUR_MYSQL_PASSWORD>",
         "MYSQL_DB": "celeba_db"
       }
     },
@@ -423,9 +409,10 @@ Evaluated on unseen standardized CelebA identity-disjoint holdout test data for 
 | **5-Fold Ensemble (XGB+CNN+ViT)** | Multi-Architecture Probability Blending | 0.3983 | **80.00%** | **0.8235** | 0.7568 | **0.7887** | Multi-Architecture Hybrid Ensemble |
 | **5-Fold Ensemble + TTA** | Bagged Ensemble + Test-Time Augmentation | 0.3983 | **80.00%** | **0.8235** | 0.7568 | **0.7887** | Genuine Image-Space Test-Time Augmentation |
 
-### Benchmark Takeaways
+### Benchmark limitations
 
-* **Zero Identity Leakage (`StratifiedGroupKFold`)**: Guarantees zero identity overlap between folds, ensuring benchmark metrics reflect genuine biometric generalization.
-* **Empirical Parity**: Benchmark figures in `README.md` strictly match `reports/model_benchmark_results.csv` and `reports/benchmarks/production_benchmark.csv`.
-* **5-Fold Stratified Bagging**: Pushed XGBoost test accuracy to **82.02%** and reduced variance across out-of-fold partitions.
-* **Multi-Architecture Blending + TTA**: Fuses gradient boosted trees with deep residual convolutions and self-attention, maintaining robust generalization across photometric transformations.
+- The historical benchmark has 75 holdout examples; it is not a full-dataset evaluation.
+- XGBoost uses annotated attributes, whereas neural models use image tensors. These modalities must be reported separately.
+- Missing images may be replaced by zero tensors in the current training implementation. Image-free CI runs are smoke tests, not evidence of image classification accuracy.
+- Full-module coverage in the last audited workflow was 32%; coverage varies by commit and test selection.
+- Identity-disjoint splitting mitigates identity leakage but does not eliminate all forms of leakage.

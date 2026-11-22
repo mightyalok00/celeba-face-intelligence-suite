@@ -32,14 +32,14 @@ All models evaluated under identity-disjoint partitioning on `person_id` using a
 +------------------------------------+------------------------------------------+-----------+----------+-----------+--------+----------+
 | Model Configuration                | Strategy                                 | Test Loss | Accuracy | Precision | Recall | F1-Score |
 +------------------------------------+------------------------------------------+-----------+----------+-----------+--------+----------+
-| Artificial Neural Network (ANN)    | Standard Split                           | 0.4078    | 82.46%   | 0.8378    | 0.8087 | 0.8230   |
-| Spatial BiLSTM (RNN)               | Sequential Row-Wise BiLSTM               | 0.4159    | 81.80%   | 0.8419    | 0.7870 | 0.8135   |
-| 5-Fold Bagged Residual CNN         | 5-Fold ResNet + In-Model Augmentation    | 0.4815    | 81.14%   | 0.7903    | 0.8522 | 0.8201   |
-| Vision Transformer (ViT)           | Patch-16 Multi-Head Self-Attention       | 0.4183    | 82.24%   | 0.8311    | 0.8130 | 0.8220   |
-| Single-Fold XGBoost                | Identity-Disjoint Standard Split         | 0.4353    | 81.36%   | 0.8222    | 0.8043 | 0.8132   |
-| 5-Fold Bagged XGBoost              | 5-Fold Stratified Group Bagging          | 0.4320    | 82.02%   | 0.8364    | 0.8000 | 0.8178   |
-| 5-Fold Ensemble (XGB+CNN+ViT)      | SLSQP Multi-Architecture Probability Mix | 0.4215    | 82.24%   | 0.8371    | 0.8043 | 0.8204   |
-| 5-Fold Ensemble + TTA              | Bagged Ensemble + Test-Time Augmentation | 0.4215    | 82.24%   | 0.8371    | 0.8043 | 0.8204   |
+| Artificial Neural Network (ANN)    | Standard Split (Face Pixels)             | 0.6440    | 72.00%   | 0.6481    | 0.9459 | 0.7692   |
+| Spatial BiLSTM (RNN)               | Sequential Row-Wise BiLSTM (Face Pixels) | 0.6927    | 50.67%   | 0.0000    | 0.0000 | 0.0000   |
+| 5-Fold Bagged Residual CNN         | 5-Fold ResNet + In-Model Aug (Pixels)    | 0.6689    | 68.00%   | 0.6512    | 0.7568 | 0.7000   |
+| Vision Transformer (ViT)           | Patch-16 Multi-Head Attention (Pixels)   | 0.6927    | 54.67%   | 0.6667    | 0.1622 | 0.2609   |
+| Single-Fold XGBoost                | Identity-Disjoint Standard Split         | 0.4275    | 82.67%   | 0.8158    | 0.8378 | 0.8267   |
+| 5-Fold Bagged XGBoost              | 5-Fold Stratified Group Bagging          | 0.4168    | 80.00%   | 0.8235    | 0.7568 | 0.7887   |
+| 5-Fold Ensemble (XGB+CNN+ViT)      | SLSQP Multi-Architecture Probability Mix | 0.3983    | 80.00%   | 0.8235    | 0.7568 | 0.7887   |
+| 5-Fold Ensemble + TTA              | Bagged Ensemble + Image-Space TTA        | 0.3983    | 80.00%   | 0.8235    | 0.7568 | 0.7887   |
 +------------------------------------+------------------------------------------+-----------+----------+-----------+--------+----------+
 ```
 

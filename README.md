@@ -10,7 +10,7 @@ An end-to-end computer vision and multimodal intelligence platform that classifi
 | **Model Architecture** | 9.0 / 10 | **9.4 / 10** | Genuine PyTorch image architectures: 4-Stage Residual Conv2D CNN (`ResidualConv2DCNN`), Vision Transformer (`VisionTransformerClassifier`), Spatial BiLSTM (`SpatialBiLSTMClassifier`), and Dense ANN (`ANNClassifier`), all featuring dual-mode tensor adapters. |
 | **Database Design & Integration** | 8.8 / 10 | **9.3 / 10** | Thread-safe connection pooling (`ConnectionPool`) with liveness validation (ping-on-acquire), auto-reconnect, and strict parameterized SQL. Removed hardcoded passwords. Table whitelisting and regex sanitization in Node.js MCP server. |
 | **Applications & UI** | 9.0 / 10 | **9.4 / 10** | **Google AI Studio Face Intelligence Engine** (`app/google_ai_studio_app.py`, Gemini 1.5 Flash zero-shot demographic, emotion, attribute detection with structured JSON schemas) + Streamlit neural inference telemetry dashboard. |
-| **Documentation** | 8.7 / 10 | **9.4 / 10** | Comprehensive [Google AI Studio Guide](file:///d:/scan/docs/GOOGLE_AI_STUDIO_GUIDE.md), formal machine learning Model Cards (`reports/model_cards/`), dataset manifest with SHA256 checksums, and algorithmic fairness audit report. |
+| **Documentation** | 8.7 / 10 | **9.4 / 10** | Comprehensive [Google AI Studio Guide](docs/GOOGLE_AI_STUDIO_GUIDE.md), formal machine learning Model Cards (`reports/model_cards/`), dataset manifest with SHA256 checksums, and algorithmic fairness audit report. |
 | **ML Evaluation Reliability (P0)** | 5.0 / 10 | **9.3 / 10** | **RESOLVED P0**: Genuine PyTorch neural network training loops (AdamW, BCEWithLogitsLoss). Zero-leakage fold-specific standardization. Real saved checkpoints (`models/checkpoints/*.pt`) loaded directly by `ModelInferenceEngine`. 5-view image-based TTA. |
 | **Code Quality & Security (P1/P2)** | 8.0 / 10 | **9.3 / 10** | **RESOLVED P1/P2**: Environment-variable credential enforcement, parameterized queries, Node.js MCP table whitelist. Strict typing passing MyPy with zero issues across 28 files, Ruff check passed, and zero Bandit security issues. |
 | **Testing & CI/CD (P1)** | 8.2 / 10 | **9.3 / 10** | 36 comprehensive tests spanning `tests/unit/`, `tests/integration/`, `tests/security/`, and `tests/end_to_end/` achieving **92% core code coverage**. Automated GitHub Actions CI/CD with full training execution. |
@@ -268,7 +268,7 @@ lr_scheduler = keras.callbacks.ReduceLROnPlateau(
 
 * **Python Version**: Python 3.10 to 3.14 (64-bit).
 * **Virtual Environment**: Recommended (conda or venv).
-* **Package Installation**: Install all dependencies via [`requirements.txt`](file:///d:/scan/requirements.txt):
+* **Package Installation**: Install all dependencies via [`requirements.txt`](requirements.txt):
 
 ```bash
 pip install -r requirements.txt
@@ -375,7 +375,7 @@ The primary intelligent facial reasoning application powered by Google AI Studio
   python app/google_ai_studio_app.py --image img_align_celeba/000001.png
   ```
 
-* For full configuration, API key setup, and custom system prompts, see [docs/GOOGLE_AI_STUDIO_GUIDE.md](file:///d:/scan/docs/GOOGLE_AI_STUDIO_GUIDE.md).
+* For full configuration, API key setup, and custom system prompts, see [docs/GOOGLE_AI_STUDIO_GUIDE.md](docs/GOOGLE_AI_STUDIO_GUIDE.md).
 
 ### 2. Interactive Streamlit Dashboard
 
@@ -389,16 +389,16 @@ The primary intelligent facial reasoning application powered by Google AI Studio
 
 All Python pipelines and modules have corresponding interactive, fully-commented `.ipynb` notebooks:
 
-* **[notebooks/ai_studio/gemini_multimodal_face_analyzer.ipynb](file:///d:/scan/notebooks/ai_studio/gemini_multimodal_face_analyzer.ipynb)**: Google AI Studio multimodal Gemini facial attribute reasoning, structured JSON schemas, and local PyTorch cross-validation.
-* **[notebooks/ai_studio/google_ai_studio_interactive_app.ipynb](file:///d:/scan/notebooks/ai_studio/google_ai_studio_interactive_app.ipynb)**: Interactive application notebook demonstrating batch hybrid multimodal face analysis.
-* **[notebooks/database/database_connection_and_pooling.ipynb](file:///d:/scan/notebooks/database/database_connection_and_pooling.ipynb)**: MySQL thread-safe connection pooling, ping-on-acquire liveness validation, and parameterized SQL query execution.
-* **[notebooks/evaluation/fairness_and_identity_leakage_audit.ipynb](file:///d:/scan/notebooks/evaluation/fairness_and_identity_leakage_audit.ipynb)**: Zero identity leakage verification ($0.0\%$ overlap) and EEOC 4/5ths disparate impact ratio audit.
-* **[notebooks/training/classical_baselines_and_ensembling.ipynb](file:///d:/scan/notebooks/training/classical_baselines_and_ensembling.ipynb)**: Classical ML baselines (Logistic Regression, ExtraTrees, XGBoost), SLSQP out-of-fold probability blending, and 5-view TTA.
-* **[notebooks/main.ipynb](file:///d:/scan/notebooks/main.ipynb)**: Primary pipeline notebook with exploratory data analysis, MySQL queries, and baseline models.
-* **[notebooks/train_classifiers.ipynb](file:///d:/scan/notebooks/train_classifiers.ipynb)**: 5-Fold Stratified Cross-Validation benchmark and ensembling suite.
-* **[notebooks/face_embedding_and_clustering.ipynb](file:///d:/scan/notebooks/face_embedding_and_clustering.ipynb)**: Google Photos style 128-D face embeddings, cosine similarity search, and unsupervised DBSCAN/K-Means clustering.
-* **[notebooks/image_classifier_models.ipynb](file:///d:/scan/notebooks/image_classifier_models.ipynb)**: Modular deep learning architectures (Deeper Residual CNN, ViT, ANN, RNN).
-* **[notebooks/project_verification.ipynb](file:///d:/scan/notebooks/project_verification.ipynb)**: Comprehensive repository verification and AST diagnostic test suite.
+* **[notebooks/ai_studio/gemini_multimodal_face_analyzer.ipynb](notebooks/ai_studio/gemini_multimodal_face_analyzer.ipynb)**: Google AI Studio multimodal Gemini facial attribute reasoning, structured JSON schemas, and local PyTorch cross-validation.
+* **[notebooks/ai_studio/google_ai_studio_interactive_app.ipynb](notebooks/ai_studio/google_ai_studio_interactive_app.ipynb)**: Interactive application notebook demonstrating batch hybrid multimodal face analysis.
+* **[notebooks/database/database_connection_and_pooling.ipynb](notebooks/database/database_connection_and_pooling.ipynb)**: MySQL thread-safe connection pooling, ping-on-acquire liveness validation, and parameterized SQL query execution.
+* **[notebooks/evaluation/fairness_and_identity_leakage_audit.ipynb](notebooks/evaluation/fairness_and_identity_leakage_audit.ipynb)**: Zero identity leakage verification ($0.0\%$ overlap) and EEOC 4/5ths disparate impact ratio audit.
+* **[notebooks/training/classical_baselines_and_ensembling.ipynb](notebooks/training/classical_baselines_and_ensembling.ipynb)**: Classical ML baselines (Logistic Regression, ExtraTrees, XGBoost), SLSQP out-of-fold probability blending, and 5-view TTA.
+* **[notebooks/pipelines/main.ipynb](notebooks/pipelines/main.ipynb)**: Primary pipeline notebook with exploratory data analysis, MySQL queries, and baseline models.
+* **[notebooks/training/train_classifiers.ipynb](notebooks/training/train_classifiers.ipynb)**: 5-Fold Stratified Cross-Validation benchmark and ensembling suite.
+* **[notebooks/clustering/face_embedding_and_clustering.ipynb](notebooks/clustering/face_embedding_and_clustering.ipynb)**: Google Photos style 128-D face embeddings, cosine similarity search, and unsupervised DBSCAN/K-Means clustering.
+* **[notebooks/inference/image_classifier_models.ipynb](notebooks/inference/image_classifier_models.ipynb)**: Modular deep learning architectures (Deeper Residual CNN, ViT, ANN, RNN).
+* **[notebooks/verification/project_verification.ipynb](notebooks/verification/project_verification.ipynb)**: Comprehensive repository verification and AST diagnostic test suite.
 
 ---
 
@@ -408,14 +408,14 @@ Evaluated on unseen standardized CelebA identity-disjoint holdout test data for 
 
 | Model Configuration | Strategy | Test Loss | Accuracy | Precision | Recall | F1-Score | Status |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Artificial Neural Network (ANN)** | Standard Split | 0.4078 | **82.46%** | **0.8378** | 0.8087 | **0.8230** | Fully Connected PyTorch Baseline |
-| **Spatial BiLSTM (RNN)** | Sequential Row-Wise BiLSTM | 0.4159 | **81.80%** | **0.8419** | 0.7870 | **0.8135** | Spatial Sequence PyTorch Baseline |
-| **5-Fold Bagged Residual CNN** | 5-Fold ResNet + In-Model Aug | 0.4815 | **81.14%** | **0.7903** | 0.8522 | **0.8201** | Deep Residual Conv2D CNN |
-| **Vision Transformer (ViT)** | Patch-16 Multi-Head Self-Attention | 0.4183 | **82.24%** | **0.8311** | 0.8130 | **0.8220** | Transformer Patch Self-Attention |
-| **Single-Fold XGBoost** | Identity-Disjoint Standard Split | 0.4353 | **81.36%** | **0.8222** | 0.8043 | **0.8132** | Tabular Gradient Boosted Baseline |
-| **5-Fold Bagged XGBoost** | 5-Fold Stratified Group Bagging | 0.4320 | **82.02%** | **0.8364** | 0.8000 | **0.8178** | Strong Bagged Model |
-| **5-Fold Ensemble (XGB+CNN+ViT)** | Multi-Architecture Probability Blending | 0.4215 | **82.24%** | **0.8371** | 0.8043 | **0.8204** | Multi-Architecture Ensemble |
-| **5-Fold Ensemble + TTA** | Bagged Ensemble + Test-Time Augmentation | 0.4215 | **82.24%** | **0.8371** | 0.8043 | **0.8204** | 5-View Test-Time Augmentation |
+| **Artificial Neural Network (ANN)** | Standard Split | 0.6440 | **72.00%** | **0.6481** | 0.9459 | **0.7692** | Fully Connected PyTorch (Face Pixels) |
+| **Spatial BiLSTM (RNN)** | Sequential Row-Wise BiLSTM | 0.6927 | **50.67%** | 0.0000 | 0.0000 | 0.0000 | Spatial Sequence PyTorch (Face Pixels) |
+| **5-Fold Bagged Residual CNN** | 5-Fold ResNet + In-Model Aug | 0.6689 | **68.00%** | **0.6512** | 0.7568 | **0.7000** | Deep Residual Conv2D CNN (Face Pixels) |
+| **Vision Transformer (ViT)** | Patch-16 Multi-Head Self-Attention | 0.6927 | **54.67%** | **0.6667** | 0.1622 | **0.2609** | Transformer Patch Self-Attention (Face Pixels) |
+| **Single-Fold XGBoost** | Identity-Disjoint Standard Split | 0.4275 | **82.67%** | **0.8158** | 0.8378 | **0.8267** | Tabular Gradient Boosted Baseline |
+| **5-Fold Bagged XGBoost** | 5-Fold Stratified Group Bagging | 0.4168 | **80.00%** | **0.8235** | 0.7568 | **0.7887** | Strong Bagged Model |
+| **5-Fold Ensemble (XGB+CNN+ViT)** | Multi-Architecture Probability Blending | 0.3983 | **80.00%** | **0.8235** | 0.7568 | **0.7887** | Multi-Architecture Hybrid Ensemble |
+| **5-Fold Ensemble + TTA** | Bagged Ensemble + Test-Time Augmentation | 0.3983 | **80.00%** | **0.8235** | 0.7568 | **0.7887** | Genuine Image-Space Test-Time Augmentation |
 
 ### Benchmark Takeaways
 

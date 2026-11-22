@@ -54,8 +54,13 @@ class ModelInferenceEngine:
     inference and test-time augmentation (TTA).
     """
 
-    def __init__(self, checkpoints_dir: Optional[Path] = None) -> None:
+    def __init__(
+        self,
+        checkpoints_dir: Optional[Path] = None,
+        strict: bool = False,
+    ) -> None:
         self.device = DEVICE
+        self.strict = strict
         if checkpoints_dir is not None:
             self.checkpoints_dir = checkpoints_dir
         else:
@@ -64,18 +69,21 @@ class ModelInferenceEngine:
             )
         self.models: Dict[str, Any] = {}
         self.loaded_checkpoints: Dict[str, str] = {}
+        self.verified_checkpoints: set[str] = set()
         self._init_and_load_models()
 
     def _init_and_load_models(self) -> None:
         """Instantiates all 4 deep learning architectures and loads trained checkpoints."""
         self.models["Residual CNN"] = ResidualConv2DCNN().to(self.device).eval()
         self.models["Vision Transformer"] = (
-            VisionTransformerClassifier(embed_dim=32, depth=2, num_heads=2).to(self.device).eval()
+            VisionTransformerClassifier(
+                img_size=64, patch_size=8, in_channels=3, embed_dim=32, depth=2, num_heads=2
+            ).to(self.device).eval()
         )
         self.models["Spatial BiLSTM"] = (
-            SpatialBiLSTMClassifier(hidden_dim=32).to(self.device).eval()
+            SpatialBiLSTMClassifier(img_size=64, in_channels=3, hidden_dim=32).to(self.device).eval()
         )
-        self.models["ANN"] = ANNClassifier(input_dim=39).to(self.device).eval()
+        self.models["ANN"] = ANNClassifier(input_dim=12288).to(self.device).eval()
 
         ckpt_files = {
             "Residual CNN": self.checkpoints_dir / "residual_cnn.pt",
@@ -90,12 +98,21 @@ class ModelInferenceEngine:
                     state_dict = torch.load(ckpt_path, map_location=self.device, weights_only=True)
                     self.models[arch_name].load_state_dict(state_dict)
                     self.loaded_checkpoints[arch_name] = str(ckpt_path)
+                    self.verified_checkpoints.add(arch_name)
                 except Exception as e:
                     self.loaded_checkpoints[arch_name] = f"Initialized without weights: {e}"
+                    if self.strict:
+                        raise RuntimeError(
+                            f"Strict verification failed: Incompatible checkpoint for {arch_name} at {ckpt_path}: {e}"
+                        )
             else:
                 self.loaded_checkpoints[arch_name] = (
                     "Initialized without checkpoint (file not found)"
                 )
+                if self.strict:
+                    raise FileNotFoundError(
+                        f"Strict verification failed: Missing required checkpoint for {arch_name} at {ckpt_path}"
+                    )
 
     def predict_attribute(
         self,
@@ -109,6 +126,11 @@ class ModelInferenceEngine:
         prediction uncertainty across TTA views, and explicit inference metadata.
         """
         tensor = preprocess_image_tensor(image_input).to(self.device)
+
+        if self.strict and architecture not in self.verified_checkpoints:
+            raise RuntimeError(
+                f"Strict verification error: Model '{architecture}' checkpoint is missing or unverified."
+            )
 
         model = self.models.get(architecture, self.models["Residual CNN"])
 
@@ -146,5 +168,6 @@ class ModelInferenceEngine:
             "prediction": predicted_class,
             "confidence": round(confidence, 4),
             "checkpoint_loaded": self.loaded_checkpoints.get(architecture, "None"),
+            "checkpoint_verified": architecture in self.verified_checkpoints,
             "is_ground_truth_lookup": False,
         }

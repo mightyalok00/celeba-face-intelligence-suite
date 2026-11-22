@@ -93,9 +93,9 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-cov pytest-mock
 
-      - name: Run Unit Tests with Coverage
+      - name: Run Comprehensive Test Suite with Full Module Coverage
         run: |
-          python -m pytest tests/unit/ -v --cov=src.database --cov=src.evaluation --cov-report=term-missing
+          python -m pytest tests/unit/ tests/security/ tests/end_to_end/ -v --cov=src --cov=app --cov-report=term-missing
 
   integration_tests:
     name: Integration & Application Tests
@@ -138,7 +138,7 @@ jobs:
           MYSQL_PASSWORD: celeba_pass_2026
           MYSQL_DATABASE: celeba_db
         run: |
-          python -m pytest tests/integration/test_mysql_integration.py tests/integration/test_streamlit_integration.py -v
+          python -m pytest tests/integration/ -v
 
   ml_validation:
     name: Fast ML Reproducibility Experiment

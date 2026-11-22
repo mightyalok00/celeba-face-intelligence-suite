@@ -58,6 +58,7 @@ venv.bak/
 .env
 .env.*
 *.env
+!.env.example
 !config/database.env.example
 
 # 6. Operating System & Editor Metadata

@@ -1,6 +1,6 @@
 {
-  "timestamp": "2026-11-22T05:33:25Z",
-  "elapsed_seconds": 8.48,
+  "timestamp": "2026-11-22T05:36:59Z",
+  "elapsed_seconds": 7.86,
   "train_samples": 170,
   "test_samples": 30,
   "optimal_ensemble_weights": {

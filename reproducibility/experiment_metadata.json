@@ -24,6 +24,6 @@
     0.3959,
     0.2584
   ],
-  "training_duration_seconds": 8.48,
+  "training_duration_seconds": 7.86,
   "verified_accuracy_leader": "5-Fold Ensemble + TTA"
 }

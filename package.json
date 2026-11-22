@@ -1,0 +1,12 @@
+{
+  "name": "celeba-face-intelligence-suite",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server.ts",
+    "start": "node server.ts",
+    "build": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "CelebA Photos - Face Intelligence Suite",
+  "description": "CelebA facial attribute gallery, face cluster explorer, pipeline verification runner, and multimodal Gemini face analyzer.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

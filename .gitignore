@@ -78,3 +78,8 @@ desktop.ini
 *.tgz
 *.rar
 *.7z
+
+# 8. Node.js & Web Runtime Artifacts
+node_modules/
+.npm/
+package-lock.json

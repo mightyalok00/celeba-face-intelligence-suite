@@ -313,13 +313,14 @@ app.get(["/api/gallery", "/gallery_data.json"], (_req: Request, res: Response) =
   res.json(loadGalleryData());
 });
 
-// Health endpoint
-app.get("/api/health", (_req: Request, res: Response) => {
+// Container pre-warming, load balancer, and health probe endpoints
+app.get(["/health", "/healthz", "/_ah/health", "/api/health", "/ping"], (_req: Request, res: Response) => {
   res.json({
     status: "healthy",
     service: "CelebA Face Intelligence",
     provider: "Gemini API",
     models: [DEFAULT_GEMINI_MODEL],
+    ready: true,
   });
 });
 

@@ -12,7 +12,8 @@ GitHub Actions runs static analysis, security checks, tests and training smoke c
 
 ├── .github\                                  # GitHub configuration & automation
 │   └── workflows\
-│       └── run_pipeline.yml                  # GitHub Actions CI/CD with audited run history
+│       ├── ci.yml                            # GitHub Actions CI suite (Lint, Types, Security, Pytest >= 85%)
+│       └── model-training.yml                # Automated model training & benchmark validation
 ├── app\                                      # Google AI Studio Application & Services
 │   ├── __init__.py                           # Application package marker
 │   ├── app.py                                # Application interface & re-exports
@@ -87,12 +88,16 @@ GitHub Actions runs static analysis, security checks, tests and training smoke c
 │   └── README.md                             # One-command reproduction instructions
 │
 ├── scripts\                                  # Operational utilities & automation
+│   ├── pipeline_runner.py                    # Multi-stage functional verification runner
 │   ├── run_pipeline.ps1                      # PowerShell automated pipeline execution script
 │   ├── start_app.bat                         # Streamlit application launcher
+│   ├── start_dev_server.bat                  # Full application Dev Server launcher
+│   ├── start_google_ai_studio.bat            # Google AI Studio application launcher
 │   └── start_mysql.bat                       # MySQL server daemon starter script
 │
 ├── src\                                      # Modular functional Python packages
 │   ├── __init__.py                           # Source package root marker
+│   ├── ai_studio\                            # Google AI Studio Gemini multimodal analyzer
 │   ├── database\
 │   │   ├── __init__.py                       # Database package marker
 │   │   └── connection.py                     # Thread-safe connection pool & parameterized SQL
@@ -117,25 +122,22 @@ GitHub Actions runs static analysis, security checks, tests and training smoke c
 │       ├── __init__.py                       # Preprocessing package marker
 │       └── image_processor.ipynb             # Resizing, normalization & standardization
 │
-├── tests\                                    # Automated test suite
+├── tests\                                    # Automated test suite (88% coverage)
 │   ├── conftest.py                           # Pytest fixtures and mock isolation
 │   ├── unit\                                 # Unit tests for architectures, pool, metrics
 │   ├── integration\                          # Integration tests for MySQL, Streamlit, models
 │   ├── security\                             # SQL injection & credential security tests
 │   └── end_to_end\                           # End-to-end inference and fairness tests
 │
-├── workflow\                                 # Automated pipeline runner & verification
-│   ├── __init__.py                           # Workflow package marker
-│   ├── pipeline_runner.ipynb                 # Interactive pipeline runner notebook
-│   ├── pipeline_runner.py                    # Multi-stage functional verification runner
-│   └── run_pipeline.bat                      # One-click Windows runner script
-│
 ├── .gitattributes                            # Git attributes configuration
 ├── .gitignore                                # Git ignore rules (excludes mysql_data & images)
+├── Dockerfile                                # Multi-stage production container
 ├── LICENSE                                   # Project MIT license
+├── package.json                              # Node.js dev server scripts & dependencies
 ├── pyproject.toml                            # Build configuration & tool settings
 ├── README.md                                 # Comprehensive project documentation
-└── requirements.txt                          # Pinned dependency requirements
+├── requirements.txt                          # Pinned dependency requirements
+└── server.ts                                 # High-performance Dev Server & Express API
 ```
 
 ---

@@ -49,7 +49,7 @@ def load_benchmark_metrics() -> Optional[pd.DataFrame]:
     # Priority order: production_benchmark -> model_benchmark_results -> ci_smoke_test_benchmark
     candidates = [
         PROJECT_ROOT / "reports" / "benchmarks" / "production_benchmark.csv",
-        PROJECT_ROOT / "reports" / "model_benchmark_results.csv",
+        PROJECT_ROOT / "reports" / "benchmarks" / "model_benchmark_results.csv",
         PROJECT_ROOT / "reports" / "benchmarks" / "ci_smoke_test_benchmark.csv",
     ]
     for p in candidates:

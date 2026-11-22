@@ -946,7 +946,7 @@ def main():
             status_text = st.empty()
 
             try:
-                from workflow.pipeline_runner import (
+                from scripts.pipeline_runner import (
                     verify_functional_benchmarks,
                     verify_functional_data,
                     verify_functional_inference,

@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
-from scipy.optimize import minimize
+from scipy.optimize import minimize  # type: ignore
 from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression, RidgeClassifier
 from sklearn.metrics import (
@@ -30,10 +30,12 @@ from sklearn.metrics import (
 from sklearn.model_selection import GroupShuffleSplit, StratifiedGroupKFold
 from sklearn.neural_network import MLPClassifier
 
+XGBClassifier: Any = None
 try:
-    from xgboost import XGBClassifier
+    from xgboost import XGBClassifier as _RealXGBClassifier
+    XGBClassifier = _RealXGBClassifier
 except ImportError:
-    XGBClassifier = None  # type: ignore[misc,assignment]
+    XGBClassifier = None
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -95,19 +97,21 @@ def extract_features(df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray, np.ndarr
     return X, y, groups
 
 
-def compute_comprehensive_metrics(y_true: np.ndarray, y_prob: np.ndarray) -> Dict[str, Any]:
+def compute_comprehensive_metrics(y_true: Any, y_prob: Any) -> Dict[str, Any]:
     """
     Computes all standard evaluation metrics from actual continuous predictions.
     """
-    y_pred = (y_prob >= 0.5).astype(int)
-    loss = log_loss(y_true, np.clip(y_prob, 1e-7, 1 - 1e-7))
-    acc = accuracy_score(y_true, y_pred)
-    prec = precision_score(y_true, y_pred, zero_division=0)
-    rec = recall_score(y_true, y_pred, zero_division=0)
-    f1 = f1_score(y_true, y_pred, zero_division=0)
-    roc_auc = roc_auc_score(y_true, y_prob)
-    pr_auc = average_precision_score(y_true, y_prob)
-    cm = confusion_matrix(y_true, y_pred).tolist()
+    y_true_arr = np.asarray(y_true)
+    y_prob_arr = np.asarray(y_prob, dtype=np.float64)
+    y_pred = (y_prob_arr >= 0.5).astype(int)
+    loss = log_loss(y_true_arr, np.clip(y_prob_arr, 1e-7, 1 - 1e-7))
+    acc = accuracy_score(y_true_arr, y_pred)
+    prec = precision_score(y_true_arr, y_pred, zero_division=0)
+    rec = recall_score(y_true_arr, y_pred, zero_division=0)
+    f1 = f1_score(y_true_arr, y_pred, zero_division=0)
+    roc_auc = roc_auc_score(y_true_arr, y_prob_arr)
+    pr_auc = average_precision_score(y_true_arr, y_prob_arr)
+    cm = confusion_matrix(y_true_arr, y_pred).tolist()
 
     return {
         "Test Loss": round(float(loss), 4),
@@ -279,7 +283,8 @@ def train_and_evaluate_all_models(sample_limit: int = 3000) -> Dict[str, Any]:
 
     benchmark_rows = []
     for item in evaluations:
-        m = compute_comprehensive_metrics(y_test, item["probs"])
+        probs_arr = np.asarray(item["probs"], dtype=np.float64)
+        m = compute_comprehensive_metrics(y_test, probs_arr)
         benchmark_rows.append({
             "Model Configuration": item["Model Configuration"],
             "Strategy": item["Strategy"],

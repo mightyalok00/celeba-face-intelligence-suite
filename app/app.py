@@ -826,12 +826,12 @@ def main():
             mcp_resp = st.session_state.get("mcp_last_resp")
             data = st.session_state.get("mcp_last_detected")
 
-            if data:
+            if isinstance(data, dict):
                 st.markdown("---")
                 if data.get("is_fallback"):
                     st.warning("⚠️ **Notice: Displaying Curated Ground-Truth Reference Lookup (Database Offline)**. This is pre-indexed reference metadata, not live model inference.")
 
-                conf_val = data.get("confidence", 0.987)
+                conf_val = float(data.get("confidence", 0.987))
                 passed_threshold = (conf_val * 100) >= mcp_threshold
 
                 chip_text = "⚠️ CURATED FALLBACK (DB OFFLINE)" if data.get("is_fallback") else ("✓ LIVE DATABASE MATCH" if passed_threshold else "⚠️ BELOW SENSITIVITY CUTOFF")
@@ -913,7 +913,11 @@ def main():
                     with tab_resp:
                         st.json(mcp_resp)
                     with tab_ascii:
-                        text_content = mcp_resp.get("result", {}).get("content", [{}])[0].get("text", "")
+                        text_content = (
+                            mcp_resp.get("result", {}).get("content", [{}])[0].get("text", "")
+                            if isinstance(mcp_resp, dict)
+                            else ""
+                        )
                         st.code(text_content, language="text")
 
                 # Cross-reference: Show other photos of this identity

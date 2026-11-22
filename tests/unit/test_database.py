@@ -70,4 +70,5 @@ def test_execute_parameterized_query_handles_db_failure(mock_get_conn):
 
     results, err = execute_parameterized_query("SELECT 1", None)
     assert results is None
+    assert err is not None
     assert "Connection refused" in err

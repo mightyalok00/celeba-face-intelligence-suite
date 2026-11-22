@@ -30,7 +30,7 @@ jobs:
 
       - name: Ruff Linter
         run: |
-          ruff check app/ src/ workflow/ tests/
+          ruff check app/ src/ scripts/ tests/
 
       - name: MyPy Static Typing
         run: |

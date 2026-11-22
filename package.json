@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "node server.ts",
+    "dev:watch": "node --watch server.ts",
     "start": "node server.ts",
+    "server": "node server.ts",
     "build": "tsc --noEmit",
     "lint": "tsc --noEmit"
   },

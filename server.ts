@@ -3,7 +3,20 @@ import type { Request, Response, NextFunction } from "express";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import dotenv from "dotenv";
 import { GoogleGenAI, Type } from "@google/genai";
+
+// Ensure environment variables from .env / .env.local are actively loaded
+dotenv.config();
+
+// Prevent dev server and container pre-warming from dying on unexpected errors
+process.on("uncaughtException", (err: Error) => {
+  console.error("[DevServer] Uncaught exception caught safely:", err.message);
+});
+
+process.on("unhandledRejection", (reason: unknown) => {
+  console.error("[DevServer] Unhandled rejection caught safely:", reason);
+});
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -318,13 +331,60 @@ app.get(["/api/gallery", "/gallery_data.json"], (_req: Request, res: Response) =
   res.json(loadGalleryData());
 });
 
+// Pre-warming HEAD probe handler for container orchestrators and health checks
+app.head(
+  [
+    "/",
+    "/index.html",
+    "/health",
+    "/healthz",
+    "/_ah/health",
+    "/_ah/start",
+    "/_ah/warmup",
+    "/api/health",
+    "/ping",
+    "/status",
+    "/api/dev/status",
+  ],
+  (_req: Request, res: Response) => {
+    res.status(200).end();
+  }
+);
+
 // Container pre-warming, load balancer, and health probe endpoints
-app.get(["/health", "/healthz", "/_ah/health", "/api/health", "/ping"], (_req: Request, res: Response) => {
+app.get(
+  [
+    "/health",
+    "/healthz",
+    "/_ah/health",
+    "/_ah/start",
+    "/_ah/warmup",
+    "/api/health",
+    "/ping",
+    "/status",
+  ],
+  (_req: Request, res: Response) => {
+    res.json({
+      status: "healthy",
+      service: "CelebA Face Intelligence",
+      provider: "Gemini API",
+      models: [DEFAULT_GEMINI_MODEL],
+      ready: true,
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString(),
+    });
+  }
+);
+
+// Dev server status and runtime diagnostics endpoint
+app.get(["/api/dev/status", "/api/status"], (_req: Request, res: Response) => {
   res.json({
-    status: "healthy",
-    service: "CelebA Face Intelligence",
-    provider: "Gemini API",
-    models: [DEFAULT_GEMINI_MODEL],
+    status: "online",
+    mode: process.env.NODE_ENV || "development",
+    service: "CelebA Face Intelligence Dev Server",
+    port: PORT,
+    gemini_api_configured: Boolean(process.env.GEMINI_API_KEY),
+    uptime_seconds: Number(process.uptime().toFixed(1)),
     ready: true,
   });
 });
@@ -498,10 +558,42 @@ app.use((_req: Request, res: Response) => {
   res.status(404).json({ error: "Endpoint not found" });
 });
 
-app.listen(PORT, HOST, () => {
-  console.log("======================================================================");
-  console.log("  CELEBA FACE INTELLIGENCE - WEB APPLICATION SERVER");
-  console.log(`  Server listening on: http://${HOST}:${PORT}`);
-  console.log(`  Web Interface: http://localhost:${PORT}/`);
-  console.log("======================================================================");
-});
+let serverInstance: ReturnType<typeof app.listen> | null = null;
+
+const gracefulShutdown = (signal: string) => {
+  console.log(`[DevServer] Received ${signal}. Shutting down cleanly...`);
+  if (serverInstance) {
+    serverInstance.close(() => {
+      console.log("[DevServer] Dev server stopped cleanly.");
+      process.exit(0);
+    });
+  } else {
+    process.exit(0);
+  }
+};
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+
+function startDevServer(port: number, retries = 5): void {
+  serverInstance = app
+    .listen(port, HOST, () => {
+      console.log("======================================================================");
+      console.log("  CELEBA FACE INTELLIGENCE - APPLICATION DEV SERVER");
+      console.log(`  Dev server listening on: http://${HOST}:${port}`);
+      console.log(`  Web Interface:           http://localhost:${port}/`);
+      console.log(`  Pre-warming / Health:    http://localhost:${port}/health`);
+      console.log(`  Dev Server Diagnostics:  http://localhost:${port}/api/dev/status`);
+      console.log("======================================================================");
+    })
+    .on("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "EADDRINUSE" && retries > 0) {
+        console.warn(`[DevServer] Port ${port} is occupied. Retrying on port ${port + 1}...`);
+        startDevServer(port + 1, retries - 1);
+      } else {
+        console.error("[DevServer] Server initialization error:", err.message);
+      }
+    });
+}
+
+startDevServer(PORT);

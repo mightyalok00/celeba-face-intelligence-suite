@@ -145,9 +145,24 @@ class GoogleAIStudioRequestHandler(SimpleHTTPRequestHandler):
         path = parsed_url.path
 
         # Healthcheck and root HEAD requests
-        if path in ("/", "/index.html", "/health", "/healthz", "/_ah/health", "/api/health", "/ping"):
+        if path in (
+            "/",
+            "/index.html",
+            "/health",
+            "/healthz",
+            "/_ah/health",
+            "/_ah/start",
+            "/_ah/warmup",
+            "/api/health",
+            "/ping",
+            "/status",
+            "/api/dev/status",
+        ):
             self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", "text/html; charset=utf-8" if path in ("/", "/index.html") else "application/json")
+            self.send_header(
+                "Content-Type",
+                "text/html; charset=utf-8" if path in ("/", "/index.html") else "application/json",
+            )
             self.end_headers()
             return
 
@@ -172,7 +187,17 @@ class GoogleAIStudioRequestHandler(SimpleHTTPRequestHandler):
                 return
 
         # 2. Container pre-warming and load balancer health endpoints
-        if path in ("/health", "/healthz", "/_ah/health", "/api/health", "/ping"):
+        if path in (
+            "/health",
+            "/healthz",
+            "/_ah/health",
+            "/_ah/start",
+            "/_ah/warmup",
+            "/api/health",
+            "/ping",
+            "/status",
+            "/api/dev/status",
+        ):
             self._send_json(
                 {
                     "status": "healthy",

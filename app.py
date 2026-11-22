@@ -19,4 +19,9 @@ if BASE_DIR not in sys.path:
 from app.app import main
 
 if __name__ == "__main__":
-    main()
+    if "--server" in sys.argv or "--dev" in sys.argv:
+        from app.google_ai_studio_app import main as studio_main
+
+        studio_main()
+    else:
+        main()

@@ -7,11 +7,16 @@ Supports both fast CI smoke testing and full production GPU training.
 
 import hashlib
 import json
+import os
 import platform
 import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import numpy as np
 import pandas as pd
@@ -254,4 +259,6 @@ if __name__ == "__main__":
     res = train_and_evaluate_all_models(sample_limit=3000)
     print("Execution complete. Benchmark summary:")
     for r in res["results"]:
-        print(f"  • {r['Model Configuration']}: Accuracy={r['Accuracy']:.2%}, F1={r['F1-Score']:.4f}")
+        acc_str = str(r['Accuracy'])
+        f1_val = float(r['F1-Score'])
+        print(f"  • {r['Model Configuration']}: Accuracy={acc_str}, F1={f1_val:.4f}")

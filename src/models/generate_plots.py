@@ -4,13 +4,21 @@ and confusion matrix heatmaps using actual evaluated metrics.
 """
 
 import json
+import os
+import sys
 from pathlib import Path
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+import matplotlib
+
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 REPORTS_DIR = PROJECT_ROOT / "reports"
 FIGURES_DIR = REPORTS_DIR / "figures"
 CM_DIR = REPORTS_DIR / "confusion_matrices"
@@ -86,7 +94,7 @@ def generate_all_evaluation_figures():
     if "ROC-AUC" in df.columns:
         plt.figure(figsize=(8, 6), dpi=300)
         for _, row in df.iterrows():
-            auc = row["ROC-AUC"]
+            auc = float(row["ROC-AUC"])
             # Synthetic plot curve based on AUC for visual documentation
             fpr = np.linspace(0, 1, 100)
             # Standard smooth ROC curve shape matching AUC

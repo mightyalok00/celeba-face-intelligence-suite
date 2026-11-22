@@ -186,11 +186,15 @@ jobs:
           pip install -r requirements.txt
 
       - name: Execute Full Model Benchmark Pipeline
+        env:
+          PYTHONPATH: .
         run: |
           python src/models/train_and_evaluate.py
           python src/models/generate_plots.py
 
       - name: Verify Generated Reports
+        env:
+          PYTHONPATH: .
         run: |
           python -c "
           import pandas as pd

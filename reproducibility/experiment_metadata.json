@@ -1,0 +1,29 @@
+{
+  "experiment_id": "celeba_facial_attribute_benchmarks_v2.5",
+  "random_seed": 42,
+  "target_attribute": "Smiling",
+  "identity_disjoint_method": "StratifiedGroupKFold",
+  "dataset_checksums": {
+    "list_attr_celeba.csv": "67be7fa3c3a2a580",
+    "identity_CelebA.txt": "c6143857c3e2630a",
+    "celebrities.csv": "211ae573ccc16b84"
+  },
+  "split_statistics": {
+    "train_identities": 168,
+    "test_identities": 30,
+    "identity_leakage_count": 0
+  },
+  "environment": {
+    "python_version": "3.14.7",
+    "system": "Windows",
+    "machine": "AMD64",
+    "processor": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel"
+  },
+  "optimal_weights": [
+    0.3457,
+    0.3959,
+    0.2584
+  ],
+  "training_duration_seconds": 9.83,
+  "verified_accuracy_leader": "5-Fold Ensemble + TTA"
+}

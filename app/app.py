@@ -6,10 +6,11 @@ Animated Motion Sliders, Live MCP Auto-Detection Pipeline, Benchmarks, and MySQL
 Author: Alok
 """
 
+import json
 import os
 import sys
-import json
 import time
+
 import pandas as pd
 from PIL import Image
 
@@ -43,44 +44,17 @@ def load_benchmark_metrics():
         return pd.read_csv(csv_path)
     return None
 
-def query_mysql(sql):
-    host = os.getenv("MYSQL_HOST", "127.0.0.1")
-    port = int(os.getenv("MYSQL_PORT", "3306"))
-    user = os.getenv("MYSQL_USER", "celeba_user")
-    password = os.getenv("MYSQL_PASSWORD", os.getenv("MYSQL_PASS", "celeba_pass_2026"))
-    database = os.getenv("MYSQL_DATABASE", os.getenv("MYSQL_DB", "celeba_db"))
-
-    try:
-        import pymysql
-        # Attempt connection with least-privilege service account
-        try:
-            conn = pymysql.connect(
-                host=host,
-                port=port,
-                user=user,
-                password=password,
-                database=database,
-                cursorclass=pymysql.cursors.DictCursor,
-                connect_timeout=2
-            )
-        except Exception:
-            # Fallback to local root account if celeba_user not yet initialized
-            conn = pymysql.connect(
-                host=host,
-                port=port,
-                user="root",
-                password="",
-                database=database,
-                cursorclass=pymysql.cursors.DictCursor,
-                connect_timeout=2
-            )
-        with conn.cursor() as cursor:
-            cursor.execute(sql)
-            results = cursor.fetchall()
-        conn.close()
+def query_mysql(sql, params=None):
+    """
+    Executes a parameterized SQL query via the secure database connection layer.
+    Rejects insecure defaults, adheres to strict environment-driven credentials,
+    and returns a pandas DataFrame along with any error message.
+    """
+    from src.database.connection import execute_parameterized_query
+    results, err = execute_parameterized_query(sql, params)
+    if results is not None:
         return pd.DataFrame(results), None
-    except Exception as e:
-        return None, str(e)
+    return None, err
 
 
 # ------------------------------------------------------------------------------
@@ -104,8 +78,8 @@ def execute_mcp_face_identification(image_id):
     }
 
     start_time = time.perf_counter()
-    sql = f"""
-    SELECT 
+    sql = """
+    SELECT
       m.image_id,
       m.file_name,
       COALESCE(c.celebrity_name, CONCAT('CelebA Identity #', i.person_id)) AS detected_person_name,
@@ -114,7 +88,7 @@ def execute_mcp_face_identification(image_id):
       CASE WHEN a.Young = 1 THEN 'Young' ELSE 'Senior' END AS detected_age_group,
       CASE WHEN a.Smiling = 1 THEN 'Smiling' ELSE 'Neutral' END AS detected_expression,
       CASE WHEN a.Eyeglasses = 1 THEN 'Yes' ELSE 'No' END AS wearing_eyeglasses,
-      CASE 
+      CASE
         WHEN a.Blond_Hair = 1 THEN 'Blond'
         WHEN a.Black_Hair = 1 THEN 'Black'
         WHEN a.Brown_Hair = 1 THEN 'Brown'
@@ -128,10 +102,10 @@ def execute_mcp_face_identification(image_id):
     INNER JOIN celeba_identities i ON m.image_id = i.image_id
     INNER JOIN celeba_attributes a ON m.image_id = a.image_id
     LEFT JOIN celebrities c ON i.person_id = c.celebrity_id
-    WHERE m.image_id = '{clean_id}'
+    WHERE m.image_id = %s
     LIMIT 1;
     """
-    df_res, err = query_mysql(sql)
+    df_res, err = query_mysql(sql, (clean_id,))
     exec_ms = round((time.perf_counter() - start_time) * 1000, 2)
 
     if err or df_res is None or df_res.empty:
@@ -215,7 +189,9 @@ def execute_mcp_face_identification(image_id):
         "eyeglasses": row["wearing_eyeglasses"],
         "hair_type": row["hair_type"],
         "total_photos": row["total_photos_of_person"],
-        "confidence": 0.987
+        "confidence": 0.987,
+        "is_fallback": False,
+        "source": "Live MySQL Database (celeba_db)"
     }
     mcp_response = {
         "jsonrpc": "2.0",
@@ -943,14 +919,15 @@ def main():
                 # Cross-reference: Show other photos of this identity
                 st.markdown("##### Other Cataloged Photos for this Identity in Database:")
                 p_id = data["identity_cluster_id"]
-                sql_same_person = f"""
-                SELECT m.image_id, m.file_name, m.file_path 
+                sql_same_person = """
+                SELECT m.image_id, m.file_name, m.file_path
                 FROM celeba_identities i
                 INNER JOIN images_metadata m ON i.image_id = m.image_id
-                WHERE i.person_id = {p_id}
+                WHERE i.person_id = %s
+                ORDER BY m.image_id ASC
                 LIMIT 6;
                 """
-                df_rel, _ = query_mysql(sql_same_person)
+                df_rel, _ = query_mysql(sql_same_person, (p_id,))
                 if df_rel is not None and not df_rel.empty:
                     rel_cols = st.columns(len(df_rel))
                     for idx, (_, r) in enumerate(df_rel.iterrows()):
@@ -1242,7 +1219,7 @@ def main():
 
         col_run, col_info = st.columns([1.2, 1.2])
         with col_run:
-            stage_choice = st.selectbox(
+            st.selectbox(
                 "Select Pipeline Workflow Stage:",
                 [
                     "All Verification Stages (Comprehensive Suite)",
@@ -1283,10 +1260,10 @@ def main():
 
             try:
                 from workflow.pipeline_runner import (
+                    verify_functional_benchmarks,
                     verify_functional_data,
-                    verify_functional_mcp,
                     verify_functional_inference,
-                    verify_functional_benchmarks
+                    verify_functional_mcp,
                 )
 
                 # Stage 1
@@ -1415,12 +1392,16 @@ def main():
                     st.dataframe(df_res, use_container_width=True)
 
         elif mcp_tool_choice == "mysql_describe_table":
-            tbl = st.selectbox("Select Table:", ["celebrities", "celeba_attributes", "celeba_identities", "images_metadata", "celeba_combined_dataset"])
+            allowed_tables = {"celebrities", "celeba_attributes", "celeba_identities", "images_metadata", "celeba_combined_dataset"}
+            tbl = st.selectbox("Select Table:", sorted(list(allowed_tables)))
             if st.button(f"🚀 Invoke MCP Tool `mysql_describe_table` ({tbl})", type="primary"):
-                sql = f"DESCRIBE `{tbl}`;"
-                df_res, err = query_mysql(sql)
-                if df_res is not None:
-                    st.dataframe(df_res, use_container_width=True)
+                if tbl in allowed_tables:
+                    sql = f"DESCRIBE `{tbl}`;"
+                    df_res, err = query_mysql(sql)
+                    if df_res is not None:
+                        st.dataframe(df_res, use_container_width=True)
+                else:
+                    st.error("Invalid table selection.")
 
         elif mcp_tool_choice == "mysql_query":
             custom_sql = st.text_area("SQL Statement:", "SELECT * FROM celeba_combined_dataset LIMIT 5;", height=100)
@@ -1484,7 +1465,7 @@ def main():
                 UNION ALL SELECT 'celeba_identities', COUNT(*) FROM celeba_identities;
             """,
             "Top 10 Identities with Most Photos": """
-                SELECT 
+                SELECT
                     i.person_id AS identity_cluster_id,
                     COALESCE(c.celebrity_name, CONCAT('CelebA Identity #', i.person_id)) AS identity_name,
                     COUNT(i.image_id) AS total_photos
@@ -1495,7 +1476,7 @@ def main():
                 LIMIT 10;
             """,
             "Demographic Attribute Distribution": """
-                SELECT 
+                SELECT
                     gender, age_group, expression, wearing_glasses,
                     COUNT(*) AS total_count
                 FROM celeba_combined_dataset
@@ -1534,12 +1515,12 @@ def main():
             by Alok
         </div>
         <div class="footer-tags">
-            <span>Python</span> &bull; 
-            <span>Streamlit</span> &bull; 
-            <span>PyTorch</span> &bull; 
-            <span>ResNet</span> &bull; 
-            <span>Vision Transformer</span> &bull; 
-            <span>MySQL 8.0</span> &bull; 
+            <span>Python</span> &bull;
+            <span>Streamlit</span> &bull;
+            <span>PyTorch</span> &bull;
+            <span>ResNet</span> &bull;
+            <span>Vision Transformer</span> &bull;
+            <span>MySQL 8.0</span> &bull;
             <span>Model Context Protocol</span>
         </div>
     </div>

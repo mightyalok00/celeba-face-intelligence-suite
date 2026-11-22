@@ -10,7 +10,7 @@
 ## 1. Quality & Readiness Scorecard
 
 | Evaluation Dimension | Initial Baseline Score | Final Verified Score | Key Transformations & Evidence |
-| --- | :---: | :---: | --- |
+| :------------------- | :--------------------: | :------------------: | :----------------------------- |
 | **ML Evaluation Reliability** | 6.8 / 10 | **9.9 / 10** | Migrated strictly to `StratifiedGroupKFold` on `person_id`. Proved 0.0% identity leakage across all 5 folds. Synchronized all 8 model benchmark metrics across CSV, README, and executable notebooks. |
 | **Code Quality & Reproducibility** | 7.5 / 10 | **9.9 / 10** | Eliminated all hardcoded absolute disk paths. Replaced slow `df.iterrows()` with vectorized tensor ingestion. Enforced deterministic SQL `ORDER BY image_id ASC`. Migrated database credentials to environment variables with least-privilege `celeba_user`. |
 | **Testing & Deployment Readiness** | 7.8 / 10 | **10.0 / 10** | Created 4-stage automated functional pipeline runner (`workflow/pipeline_runner.py`), companion interactive notebooks, GitHub Actions CI/CD with native `workflow_dispatch` run button, and live pipeline triggers in both the Streamlit app and Google Photos website. |

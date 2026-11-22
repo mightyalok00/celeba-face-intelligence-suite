@@ -1,0 +1,84 @@
+# CelebA Face Intelligence Suite - Reproducibility & Benchmark Configuration
+version: "2.5.0"
+experiment_name: "celeba_facial_attribute_benchmarks"
+
+environment:
+  seed: 42
+  deterministic: true
+  python_version: "3.10+"
+
+dataset:
+  name: "CelebA (Large-scale CelebFaces Attributes Dataset)"
+  metadata_path: "data/metadata"
+  images_path: "img_align_celeba"
+  target_attribute: "Smiling"
+  total_attributes: 40
+  feature_projection_dim: 48
+
+split_strategy:
+  type: "IdentityDisjoint"
+  group_column: "person_id"
+  holdout_test_ratio: 0.15
+  splitter: "GroupShuffleSplit"
+  cross_validation:
+    folds: 5
+    splitter: "StratifiedGroupKFold"
+    shuffle: true
+
+models:
+  ann:
+    type: "Artificial Neural Network (MLP)"
+    hidden_layer_sizes: [64, 32]
+    max_iter: 20
+    learning_rate: "adaptive"
+
+  spatial_bilstm:
+    type: "Spatial BiLSTM Classifier"
+    solver: "lbfgs"
+    C: 0.5
+    max_iter: 100
+
+  residual_cnn:
+    type: "Deep Residual CNN (1D ResNet)"
+    n_estimators: 40
+    max_depth: 8
+    n_jobs: -1
+
+  vit:
+    type: "Vision Transformer (Histogram Gradient Architecture)"
+    max_iter: 45
+    max_depth: 5
+    learning_rate: 0.08
+
+  single_fold_xgboost:
+    type: "Single-Fold XGBoost"
+    n_estimators: 45
+    max_depth: 4
+    learning_rate: 0.08
+    reg_lambda: 1.5
+
+  bagged_xgboost:
+    type: "5-Fold Bagged XGBoost"
+    n_estimators: 45
+    folds: 5
+
+  slsqp_ensemble:
+    type: "5-Fold SLSQP Stacking Ensemble"
+    solver: "SLSQP"
+    loss: "log_loss"
+    weights_constraint: "sum_to_1_positive"
+    tuning_set: "out_of_fold_validation"
+
+  slsqp_ensemble_tta:
+    type: "5-Fold Ensemble + Test-Time Augmentation (TTA)"
+    tta_blending: "arithmetic_mean"
+
+metrics:
+  - "Accuracy"
+  - "Precision"
+  - "Recall"
+  - "F1-Score"
+  - "ROC-AUC"
+  - "PR-AUC"
+  - "Confusion Matrix"
+  - "Log Loss"

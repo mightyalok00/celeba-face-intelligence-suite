@@ -1,0 +1,109 @@
+{
+  "timestamp": "2026-11-22T04:56:25Z",
+  "elapsed_seconds": 9.83,
+  "train_samples": 170,
+  "test_samples": 30,
+  "optimal_ensemble_weights": {
+    "xgboost": 0.3457,
+    "cnn": 0.3959,
+    "vit": 0.2584
+  },
+  "benchmarks": [
+    {
+      "Model Configuration": "Artificial Neural Network (ANN)",
+      "Strategy": "Standard Split",
+      "Test Loss": 0.4504,
+      "Accuracy": "80.00%",
+      "Precision": 0.6875,
+      "Recall": 0.9167,
+      "F1-Score": 0.7857,
+      "ROC-AUC": 0.9676,
+      "PR-AUC": 0.9653,
+      "Confusion Matrix": "[[13, 5], [1, 11]]"
+    },
+    {
+      "Model Configuration": "Spatial BiLSTM (RNN)",
+      "Strategy": "Sequential Row-Wise BiLSTM",
+      "Test Loss": 0.2947,
+      "Accuracy": "83.33%",
+      "Precision": 0.7333,
+      "Recall": 0.9167,
+      "F1-Score": 0.8148,
+      "ROC-AUC": 0.9769,
+      "PR-AUC": 0.9722,
+      "Confusion Matrix": "[[14, 4], [1, 11]]"
+    },
+    {
+      "Model Configuration": "5-Fold Bagged Residual CNN",
+      "Strategy": "5-Fold ResNet + In-Model Aug",
+      "Test Loss": 0.4155,
+      "Accuracy": "83.33%",
+      "Precision": 0.7059,
+      "Recall": 1.0,
+      "F1-Score": 0.8276,
+      "ROC-AUC": 0.9815,
+      "PR-AUC": 0.9764,
+      "Confusion Matrix": "[[13, 5], [0, 12]]"
+    },
+    {
+      "Model Configuration": "Vision Transformer (ViT)",
+      "Strategy": "Patch-16 Multi-Head Self-Attention",
+      "Test Loss": 0.3829,
+      "Accuracy": "83.33%",
+      "Precision": 0.7059,
+      "Recall": 1.0,
+      "F1-Score": 0.8276,
+      "ROC-AUC": 0.963,
+      "PR-AUC": 0.9551,
+      "Confusion Matrix": "[[13, 5], [0, 12]]"
+    },
+    {
+      "Model Configuration": "Single-Fold XGBoost",
+      "Strategy": "Identity-Disjoint Standard Split",
+      "Test Loss": 0.3731,
+      "Accuracy": "83.33%",
+      "Precision": 0.7333,
+      "Recall": 0.9167,
+      "F1-Score": 0.8148,
+      "ROC-AUC": 0.9167,
+      "PR-AUC": 0.8266,
+      "Confusion Matrix": "[[14, 4], [1, 11]]"
+    },
+    {
+      "Model Configuration": "5-Fold Bagged XGBoost",
+      "Strategy": "5-Fold Stratified Group Bagging",
+      "Test Loss": 0.4012,
+      "Accuracy": "83.33%",
+      "Precision": 0.7059,
+      "Recall": 1.0,
+      "F1-Score": 0.8276,
+      "ROC-AUC": 0.9213,
+      "PR-AUC": 0.9012,
+      "Confusion Matrix": "[[13, 5], [0, 12]]"
+    },
+    {
+      "Model Configuration": "5-Fold Ensemble (XGB+CNN+ViT)",
+      "Strategy": "Multi-Architecture Probability Blending",
+      "Test Loss": 0.3939,
+      "Accuracy": "83.33%",
+      "Precision": 0.7059,
+      "Recall": 1.0,
+      "F1-Score": 0.8276,
+      "ROC-AUC": 0.9583,
+      "PR-AUC": 0.9494,
+      "Confusion Matrix": "[[13, 5], [0, 12]]"
+    },
+    {
+      "Model Configuration": "5-Fold Ensemble + TTA",
+      "Strategy": "Bagged Ensemble + Test-Time Augmentation",
+      "Test Loss": 0.3965,
+      "Accuracy": "83.33%",
+      "Precision": 0.7059,
+      "Recall": 1.0,
+      "F1-Score": 0.8276,
+      "ROC-AUC": 0.9676,
+      "PR-AUC": 0.9588,
+      "Confusion Matrix": "[[13, 5], [0, 12]]"
+    }
+  ]
+}

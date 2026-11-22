@@ -5,7 +5,7 @@ An end-to-end computer vision and database engineering platform that classifies 
 ## System Quality & Audit Scorecard
 
 | Evaluation Dimension | Audited Score | Verified Implementation & Evidence |
-| --- | :---: | --- |
+| :------------------- | :-----------: | :---------------------------------- |
 | **ML Evaluation Reliability** | **9.9 / 10** | Strict `StratifiedGroupKFold` partitioning on `person_id` guarantees **0.0% identity leakage**. All 8 model architectures documented with synchronized, calibrated metrics. |
 | **Code Quality & Reproducibility** | **9.9 / 10** | Zero hardcoded paths; vectorized batch preprocessing; deterministic SQL (`ORDER BY image_id ASC`); least-privilege credentials (`celeba_user`) managed via environment variables. |
 | **Testing & Deployment Readiness** | **10.0 / 10** | 4-stage automated functional pipeline suite (`workflow/pipeline_runner.py`), interactive execution buttons on both the Streamlit app and Google Photos website, and GitHub Actions CI/CD. |

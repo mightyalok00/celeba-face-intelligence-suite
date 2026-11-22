@@ -1,28 +1,112 @@
-name: CelebA Face AI Pipeline & Verification
+name: CelebA Face AI CI/CD & Verification Pipeline
 
 on:
-  workflow_dispatch:
-    inputs:
-      pipeline_stage:
-        description: 'Select pipeline stage to execute'
-        required: true
-        default: 'all'
-        type: choice
-        options:
-          - all
-          - data_integrity
-          - mcp_protocol_check
-          - inference_check
-          - benchmark_check
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      full_train:
+        description: 'Trigger full 8-architecture model training on 3,000+ samples'
+        required: false
+        type: boolean
+        default: false
+  schedule:
+    - cron: '0 2 * * 0'  # Weekly full training run on Sunday 02:00 UTC
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  validate_pipeline:
-    name: Execute Face AI & Model Pipeline
+  code_quality:
+    name: Code Quality & Static Typing
     runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Linting & Typing Tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff mypy pandas types-PyYAML
+
+      - name: Ruff Lint Check
+        run: |
+          ruff check app/ src/ workflow/ tests/
+
+      - name: MyPy Static Type Check
+        run: |
+          mypy app/ src/ --ignore-missing-imports
+
+  security:
+    name: Security & AST Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Bandit Security Scanner
+        run: |
+          python -m pip install --upgrade pip
+          pip install bandit
+
+      - name: Bandit Security Scan
+        run: |
+          bandit -r app/ src/ -ll -x tests,data,img_align_celeba
+
+  unit_tests:
+    name: Unit Test Suite
+    runs-on: ubuntu-latest
+    needs: [code_quality, security]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-mock
+
+      - name: Run Unit Tests with Coverage
+        run: |
+          python -m pytest tests/unit/ -v --cov=src.database --cov-report=term-missing
+
+  integration_tests:
+    name: Integration & Application Tests
+    runs-on: ubuntu-latest
+    needs: [unit_tests]
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root_test_pass
+          MYSQL_DATABASE: celeba_db
+          MYSQL_USER: celeba_user
+          MYSQL_PASSWORD: celeba_pass_2026
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
 
     steps:
       - name: Checkout Repository
@@ -34,38 +118,76 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Install Core Dependencies
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-mock
+
+      - name: Run Integration Tests
+        env:
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: 3306
+          MYSQL_USER: celeba_user
+          MYSQL_PASSWORD: celeba_pass_2026
+          MYSQL_DATABASE: celeba_db
+        run: |
+          python -m pytest tests/integration/test_mysql_integration.py tests/integration/test_streamlit_integration.py -v
+
+  ml_validation:
+    name: Fast ML Reproducibility Experiment
+    runs-on: ubuntu-latest
+    needs: [unit_tests]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run Fast ML Pipeline Test
+        run: |
+          python -m pytest tests/integration/test_model_pipeline.py -v
+
+  full_training:
+    name: Full 8-Architecture Model Training
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.full_train == 'true') }}
+    needs: [integration_tests, ml_validation]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install All ML & DL Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Verify Application Syntax & Compilation
+      - name: Execute Full Model Benchmark Pipeline
         run: |
-          python -m py_compile app.py
-          python -m py_compile app/app.py
+          python src/models/train_and_evaluate.py
+          python src/models/generate_plots.py
 
-      - name: Validate Dataset Metadata & Benchmarks
+      - name: Verify Generated Reports
         run: |
           python -c "
           import pandas as pd
-          attr = pd.read_csv('data/metadata/list_attr_celeba.csv', nrows=10)
-          celebs = pd.read_csv('data/metadata/celebrities.csv')
-          bench = pd.read_csv('reports/model_benchmark_results.csv')
-          print('Attributes loaded successfully: shape =', attr.shape)
-          print('Celebrities ground truth loaded: count =', len(celebs))
-          print('Model benchmark metrics verified: count =', len(bench))
+          df = pd.read_csv('reports/model_benchmark_results.csv')
+          print('Verified 8 models trained:')
+          print(df[['Model Configuration', 'Accuracy', 'F1-Score']])
           "
-
-      - name: Set up Node.js for MCP Servers
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Verify MCP Server Syntax
-        run: |
-          node -c mcp/mysql_mcp_server.mjs
-          node -c mcp/google_photos_mcp_server.mjs
-
-      - name: Run Pipeline Automation Suite
-        run: |
-          python workflow/pipeline_runner.py --stage "${{ github.event.inputs.pipeline_stage || 'all' }}"

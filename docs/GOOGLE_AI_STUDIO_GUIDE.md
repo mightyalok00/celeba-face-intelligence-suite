@@ -8,7 +8,7 @@ This document describes how the CelebA Face Intelligence Suite integrates with *
 
 Google AI Studio provides access to Google's flagship Gemini models (`gemini-1.5-flash` and `gemini-1.5-pro`) for multimodal reasoning over face images, facial attributes, expressions, and celebrity metadata.
 
-```
+```text
                       +------------------------------------+
                       |    CelebA Face Image (RGB Tensor)  |
                       +------------------------------------+
@@ -38,16 +38,19 @@ Google AI Studio provides access to Google's flagship Gemini models (`gemini-1.5
 
 ## 2. Configuration & Authentication
 
-### Setting up Google AI Studio API Key:
+### Setting up Google AI Studio API Key
+
 1. Obtain an API key from [Google AI Studio](https://aistudio.google.com/).
 2. Set the environment variable in your terminal or `.env` file:
+
    ```bash
    export GEMINI_API_KEY="your-google-ai-studio-api-key"
    # On Windows PowerShell:
    $env:GEMINI_API_KEY="your-google-ai-studio-api-key"
    ```
 
-### Configuration File (`config/ai_studio_config.yaml`):
+### Configuration File (`config/ai_studio_config.yaml`)
+
 ```yaml
 ai_studio:
   provider: "Google AI Studio"
@@ -66,12 +69,14 @@ generation_parameters:
 
 ## 3. Running the Application
 
-### Command Line Interface:
+### Command Line Interface
+
 ```bash
 python app/google_ai_studio_app.py --image img_align_celeba/000001.png --model gemini-1.5-flash
 ```
 
-### Python SDK Integration:
+### Python SDK Integration
+
 ```python
 from src.ai_studio import GeminiFaceIntelligenceStudio
 
@@ -87,6 +92,7 @@ print(result["analysis"]["demographics"]["apparent_age_group"])
 ## 4. Prompt Engineering & System Instructions
 
 The application uses Google AI Studio system instructions configured for biometric analysis:
+
 - **Zero Hallucination Guardrails**: Adheres strictly to the 40 CelebA binary attribute definitions.
 - **Multimodal Facial Feature Reasoning**: Cross-references visible facial landmarks with database identities.
 - **Structured JSON Mode**: Uses `response_mime_type: "application/json"` to ensure machine-parsable responses.

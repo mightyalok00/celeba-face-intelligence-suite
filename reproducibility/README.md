@@ -16,13 +16,15 @@ python src/models/generate_plots.py
 
 ## 2. Environment Setup
 
-### Using Conda:
+### Using Conda
+
 ```bash
 conda env create -f reproducibility/environment.yml
 conda activate celeba-face-ai
 ```
 
-### Using Pip:
+### Using Pip
+
 ```bash
 pip install -r requirements.txt
 pip install pytest pytest-cov pytest-mock ruff mypy bandit
@@ -48,18 +50,4 @@ pytest tests/ -v --cov=app --cov=src --cov-report=term-missing
 
 # Run code quality, typing, and security scanners
 ruff check .
-mypy app/ src/
-bandit -r app/ src/
 ```
-
-## 5. Artifact Manifest
-
-| Output Artifact | Path | Purpose |
-| :--- | :--- | :--- |
-| Summary Benchmark CSV | `reports/model_benchmark_results.csv` | Synchronized metrics across README and App |
-| Detailed Benchmark CSV | `reports/model_benchmark_detailed.csv` | Full metric suite including ROC-AUC and PR-AUC |
-| Cross-Validation CSV | `reports/cross_validation_results.csv` | Per-fold OOF validation statistics |
-| Benchmark Comparison Chart | `reports/figures/model_benchmark_comparison.png` | Visual comparison of Accuracy and F1-Scores |
-| Confusion Matrices | `reports/confusion_matrices/` | Individual confusion matrix plots per architecture |
-| ROC Curves | `reports/roc_curves/` | ROC curve plots per architecture |
-| Execution Log | `reports/training_logs/latest_training_run.json` | Detailed telemetry and run metadata |

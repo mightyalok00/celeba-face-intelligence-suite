@@ -50,8 +50,8 @@ def compute_fairness_audit(
 
     return {
         "subgroup": subgroup_name,
-        "group_a_size": int(len(y_true_a)),
-        "group_b_size": int(len(y_true_b)),
+        "group_a_size": len(y_true_a),
+        "group_b_size": len(y_true_b),
         "group_a_positive_rate": round(rate_a, 4),
         "group_b_positive_rate": round(rate_b, 4),
         "demographic_parity_difference": round(demographic_parity_diff, 4),

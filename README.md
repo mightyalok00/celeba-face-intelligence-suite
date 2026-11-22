@@ -364,18 +364,23 @@ The primary intelligent facial reasoning application powered by Google AI Studio
 * **Multimodal Zero-Shot Reasoning**: Extracts deep semantic facial context, demographics, emotion and expression, and attribute analysis using Gemini 1.5 Flash.
 * **Hybrid Local Verification**: Compares multimodal reasoning against local PyTorch neural checkpoints (`models/checkpoints/` for Residual CNN, ViT, BiLSTM, and ANN).
 * **Launch with Launcher Script**:
+
   ```cmd
   scripts\start_google_ai_studio.bat
   ```
+
 * **Or Run Directly via CLI**:
+
   ```cmd
   python app/google_ai_studio_app.py --image img_align_celeba/000001.png
   ```
+
 * For full configuration, API key setup, and custom system prompts, see [docs/GOOGLE_AI_STUDIO_GUIDE.md](file:///d:/scan/docs/GOOGLE_AI_STUDIO_GUIDE.md).
 
 ### 2. Interactive Streamlit Dashboard
 
 * Launch the interactive local telemetry dashboard with live PyTorch neural inference, TTA view analysis, and model cards:
+
   ```cmd
   scripts\start_app.bat
   ```

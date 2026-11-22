@@ -14,7 +14,10 @@ import time
 import pandas as pd
 from PIL import Image
 
-from app.ui.styles import apply_custom_styles
+try:
+    from app.ui.styles import apply_custom_styles
+except (ImportError, ModuleNotFoundError):
+    from ui.styles import apply_custom_styles  # type: ignore[no-redef]
 
 try:
     import streamlit as st

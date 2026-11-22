@@ -26,10 +26,13 @@ D:\scan\
 ├── .github\                                  # GitHub configuration & automation
 │   └── workflows\
 │       └── run_pipeline.yml                  # GitHub Actions CI/CD with audited run history
-├── app\                                      # Web application module
+├── app\                                      # Google AI Studio Application & Services
 │   ├── __init__.py                           # Application package marker
-│   └── app.py                                # Interactive Streamlit dashboard with live neural inference & MCP
-├── app.py                                    # Root application launcher & forwarder
+│   ├── app.py                                # Application interface & re-exports
+│   ├── google_ai_studio_app.py               # Google AI Studio Multimodal Web App & Server
+│   └── service.py                            # Database, gallery loader & MCP service layer
+├── app.py                                    # Root launcher for Google AI Studio application
+├── main.py                                   # Universal container entrypoint for Google AI Studio
 ├── config\                                   # Environment & framework configuration
 │   ├── database.env.example                  # Environment variable configuration template
 │   └── keras.json                            # Keras backend settings
@@ -361,29 +364,32 @@ Both servers are pre-registered in your Antigravity configuration:
 
 The primary intelligent facial reasoning application powered by Google AI Studio (Gemini 1.5 Flash) and local PyTorch deep learning models:
 
+* **Interactive Web Application & Server**:
+  Launch the unified Google AI Studio application server on `$PORT` (default `8080`):
+
+  ```cmd
+  python app.py
+  # or
+  python main.py
+  # or
+  python app/google_ai_studio_app.py --server --port 8080
+  ```
+
 * **Multimodal Zero-Shot Reasoning**: Extracts deep semantic facial context, demographics, emotion and expression, and attribute analysis using Gemini 1.5 Flash.
 * **Hybrid Local Verification**: Compares multimodal reasoning against local PyTorch neural checkpoints (`models/checkpoints/` for Residual CNN, ViT, BiLSTM, and ANN).
-* **Launch with Launcher Script**:
+* **Launch with Windows Launcher Script**:
 
   ```cmd
   scripts\start_google_ai_studio.bat
   ```
 
-* **Or Run Directly via CLI**:
+* **CLI Image Analysis**:
 
   ```cmd
-  python app/google_ai_studio_app.py --image img_align_celeba/000001.png
+  python app/google_ai_studio_app.py --image img_align_celeba/000001.png --model gemini-1.5-flash
   ```
 
 * For full configuration, API key setup, and custom system prompts, see [docs/GOOGLE_AI_STUDIO_GUIDE.md](docs/GOOGLE_AI_STUDIO_GUIDE.md).
-
-### 2. Interactive Streamlit Dashboard
-
-* Launch the interactive local telemetry dashboard with live PyTorch neural inference, TTA view analysis, and model cards:
-
-  ```cmd
-  scripts\start_app.bat
-  ```
 
 ### 3. Interactive Jupyter Notebooks
 

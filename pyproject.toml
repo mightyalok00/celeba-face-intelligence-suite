@@ -49,6 +49,7 @@ python_version = "3.10"
 warn_return_any = false
 warn_unused_configs = true
 ignore_missing_imports = true
+explicit_package_bases = true
 exclude = [
     "img_align_celeba",
     "data",

@@ -1,12 +1,12 @@
 """
-Integration tests for Streamlit application components and MCP tool interfaces.
+Integration tests for Google AI Studio application components, services, and MCP tool interfaces.
 """
 
 from unittest.mock import patch
 
 import pytest
 
-from app.app import (
+from app.service import (
     execute_mcp_face_identification,
     load_benchmark_metrics,
     load_gallery_data,
@@ -46,7 +46,7 @@ def test_mcp_face_identification_fallback_behavior():
     Verify that when MySQL is offline, execute_mcp_face_identification
     transparently falls back to ground-truth reference data and labels it clearly as offline fallback.
     """
-    with patch("app.app.query_mysql", return_value=(None, "Database offline")):
+    with patch("app.service.query_mysql", return_value=(None, "Database offline")):
         req, resp, structured = execute_mcp_face_identification("001553.jpg")
 
         # 1. Verify JSON-RPC 2.0 tool invocation structure
@@ -86,7 +86,7 @@ def test_mcp_face_identification_live_db_match():
         ]
     )
 
-    with patch("app.app.query_mysql", return_value=(mock_df, None)):
+    with patch("app.service.query_mysql", return_value=(mock_df, None)):
         req, resp, structured = execute_mcp_face_identification("000001.jpg")
         if not isinstance(structured, dict):
             raise AssertionError("execute_mcp_face_identification should return a dict")

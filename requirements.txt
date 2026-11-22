@@ -1,10 +1,11 @@
-# Pinned Core Deep Learning & Computer Vision
+# Google AI Studio & Gemini Multimodal Application SDK
+google-generativeai>=0.8.0,<=0.9.0
+
+# Core Deep Learning & Computer Vision (Residual CNN, ViT, BiLSTM, ANN)
 torch>=2.0.0,<=2.11.0
 torchvision>=0.15.0,<=0.26.0
-tensorflow>=2.15.0
-keras>=3.0.0
 
-# Gradient Boosted Trees
+# Gradient Boosted Trees Baselines
 xgboost>=2.0.0,<=3.5.0
 
 # Machine Learning, Clustering & Scientific Computing
@@ -23,12 +24,6 @@ seaborn>=0.13.0,<=0.14.0
 # Relational Database Connector & Security
 pymysql>=1.1.0,<=1.2.0
 cryptography>=42.0.0,<=51.0.0
-
-# Interactive Web Dashboard & UI
-streamlit>=1.32.0,<=1.63.0
-
-# Google AI Studio & Gemini Multimodal SDK
-google-generativeai>=0.8.0,<=0.9.0
 
 # Configuration & Serialization
 pyyaml>=6.0.0,<=6.1.0

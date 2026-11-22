@@ -7,6 +7,9 @@ import numpy as np
 import pytest
 import torch
 import torch.nn as nn
+from PIL import Image
+
+from src.models.inference import ModelInferenceEngine
 
 
 class Residual1DCNN(nn.Module):
@@ -117,3 +120,26 @@ def test_test_time_augmentation_blending():
     p_tta = (p_orig + p_flipped) / 2.0
     assert np.allclose(p_tta, np.array([0.72, 0.41, 0.83]))
     assert np.all((p_tta >= 0.0) & (p_tta <= 1.0))
+
+
+def test_model_inference_engine_genuine_tta_and_checkpoint_loading():
+    """Verify ModelInferenceEngine loads architectures and runs 5-view TTA."""
+    engine = ModelInferenceEngine()
+    test_img = Image.new("RGB", (64, 64), color="green")
+
+    # 1. Prediction with genuine TTA
+    res = engine.predict_attribute(test_img, architecture="Residual CNN", use_tta=True)
+    assert res["source"] == "model_inference"
+    assert res["architecture"] == "Residual CNN"
+    assert res["use_tta"] is True
+    assert res["tta_views_evaluated"] == 5
+    assert 0.0 <= res["probability"] <= 1.0
+    assert 0.0 <= res["confidence"] <= 1.0
+    assert res["prediction_uncertainty_std"] >= 0.0
+    assert "checkpoint_loaded" in res
+
+    # 2. Prediction without TTA
+    res_no_tta = engine.predict_attribute(test_img, architecture="Residual CNN", use_tta=False)
+    assert res_no_tta["use_tta"] is False
+    assert res_no_tta["tta_views_evaluated"] == 1
+    assert res_no_tta["prediction_uncertainty_std"] == 0.0

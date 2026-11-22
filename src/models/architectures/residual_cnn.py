@@ -70,6 +70,12 @@ class ResidualConv2DCNN(nn.Module):
         self.pool = nn.AdaptiveAvgPool2d((1, 1))
         self.dropout = nn.Dropout(dropout)
         self.fc = nn.Linear(256, num_classes)
+        # Adapter to reshape 39 metadata attribute features to image tensor (B, 3, 64, 64)
+        self.feat_adapter = nn.Sequential(
+            nn.Linear(39, 128),
+            nn.ReLU(inplace=True),
+            nn.Linear(128, 3 * 64 * 64),
+        )
 
     def _make_layer(self, out_channels: int, stride: int) -> nn.Sequential:
         layer = ResidualBlock(self.in_channels, out_channels, stride)
@@ -77,6 +83,8 @@ class ResidualConv2DCNN(nn.Module):
         return nn.Sequential(layer)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if x.dim() == 2 and x.shape[1] == 39:
+            x = self.feat_adapter(x).view(-1, 3, 64, 64)
         out = self.stem(x)
         out = self.stage1(out)
         out = self.stage2(out)

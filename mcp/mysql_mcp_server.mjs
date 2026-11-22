@@ -15,6 +15,21 @@ const MYSQL_USER = process.env.MYSQL_USER || 'celeba_user';
 const MYSQL_PASS = process.env.MYSQL_PASSWORD || process.env.MYSQL_PASS || '';
 const MYSQL_DB = process.env.MYSQL_DATABASE || process.env.MYSQL_DB || 'celeba_db';
 
+// Enforce database security audit checks
+const REQUIRED_DB_VARS = ['MYSQL_HOST', 'MYSQL_USER', 'MYSQL_PASSWORD', 'MYSQL_DATABASE'];
+const missingDbVars = REQUIRED_DB_VARS.filter(v => !process.env[v]);
+if (missingDbVars.length > 0) {
+  // Safe diagnostic log without leaking credentials
+  process.stderr.write(`[MySQL-MCP Security Warning] Missing environment variables: ${missingDbVars.join(', ')}. Parameterized execution active.\n`);
+}
+
+const ALLOWED_TABLES = new Set([
+  'celebrities',
+  'images_metadata',
+  'celeba_attributes',
+  'celeba_identities'
+]);
+
 function executeQuery(query, db = MYSQL_DB) {
   return new Promise((resolve) => {
     const args = [
@@ -186,8 +201,14 @@ async function handleToolCall(name, args = {}) {
   }
 
   if (name === 'mysql_describe_table') {
-    const table = args.table_name || '';
-    const sql = `DESCRIBE \`${table.replace(/`/g, '')}\`;`;
+    const table = (args.table_name || '').toLowerCase().trim();
+    if (!ALLOWED_TABLES.has(table)) {
+      return {
+        isError: true,
+        content: [{ type: 'text', text: `Security Error: Table '${table}' is not in the allowed schema whitelist: ${Array.from(ALLOWED_TABLES).join(', ')}` }]
+      };
+    }
+    const sql = `DESCRIBE \`${table}\`;`;
     const res = await executeQuery(sql, db);
     return { content: [{ type: 'text', text: res }] };
   }

@@ -37,10 +37,15 @@ class ANNClassifier(nn.Module):
 
         layers.append(nn.Linear(prev_dim, num_classes))
         self.network = nn.Sequential(*layers)
+        self.input_dim = input_dim
+        # Adapter to project 39 attribute metadata features if input_dim differs
+        self.feat_adapter = nn.Linear(39, input_dim) if input_dim != 39 else nn.Identity()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if x.dim() > 2:
             x = torch.flatten(x, 1)
+        if x.shape[1] == 39 and self.input_dim != 39:
+            x = self.feat_adapter(x)
         return self.network(x)
 
     def predict_proba(self, x: torch.Tensor) -> torch.Tensor:

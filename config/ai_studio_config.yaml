@@ -1,0 +1,34 @@
+# ==============================================================================
+# Google AI Studio Configuration for CelebA Face Intelligence Suite
+# ==============================================================================
+
+ai_studio:
+  provider: "Google AI Studio"
+  api_documentation: "https://ai.google.dev"
+  default_model: "gemini-1.5-flash"
+  alternate_model: "gemini-1.5-pro"
+  environment_variable: "GEMINI_API_KEY"
+
+generation_parameters:
+  temperature: 0.2
+  top_p: 0.95
+  top_k: 40
+  max_output_tokens: 1024
+  response_mime_type: "application/json"
+
+safety_settings:
+  harassment: "BLOCK_ONLY_HIGH"
+  hate_speech: "BLOCK_ONLY_HIGH"
+  sexually_explicit: "BLOCK_ONLY_HIGH"
+  dangerous_content: "BLOCK_ONLY_HIGH"
+
+celeba_integration:
+  target_attributes:
+    - Smiling
+    - Male
+    - Young
+    - Eyeglasses
+    - Blond_Hair
+    - Black_Hair
+  database_link: "celeba_db"
+  cross_validation_consistency: true

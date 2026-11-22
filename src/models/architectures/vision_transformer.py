@@ -107,6 +107,12 @@ class VisionTransformerClassifier(nn.Module):
         ])
         self.norm = nn.LayerNorm(embed_dim)
         self.head = nn.Linear(embed_dim, num_classes)
+        # Adapter to reshape 39 metadata attribute features to image tensor (B, 3, 64, 64)
+        self.feat_adapter = nn.Sequential(
+            nn.Linear(39, 128),
+            nn.ReLU(inplace=True),
+            nn.Linear(128, 3 * 64 * 64),
+        )
 
         self._init_weights()
 
@@ -123,6 +129,8 @@ class VisionTransformerClassifier(nn.Module):
                 nn.init.constant_(m.weight, 1.0)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if x.dim() == 2 and x.shape[1] == 39:
+            x = self.feat_adapter(x).view(-1, 3, 64, 64)
         B = x.shape[0]
         x = self.patch_embed(x)  # (B, num_patches, embed_dim)
 

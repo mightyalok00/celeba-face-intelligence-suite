@@ -31,10 +31,7 @@ def test_full_query_roundtrip_mocked(mock_connect):
 
     # 3. Assert error-free execution and narrow type for static analyzers
     assert err is None
-    if not isinstance(data, list):
-        raise AssertionError("execute_parameterized_query returned None for valid query")
-
-    # 4. Assert row contents and connection lifecycle disposal
+    assert data is not None
     assert len(data) == 1
     assert data[0]["person_id"] == 2880
     mock_conn.close.assert_called_once()

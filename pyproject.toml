@@ -19,6 +19,7 @@ testpaths = ["tests"]
 pythonpath = ["."]
 norecursedirs = [
     "img_align_celeba",
+    "Celebrity-Face-Recognition-Dataset-master",
     "data",
     ".git",
     ".gemini",

@@ -168,7 +168,6 @@ jobs:
   full_training:
     name: Full 8-Architecture Model Training
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.full_train == 'true') }}
     needs: [integration_tests, ml_validation]
     steps:
       - name: Checkout Repository

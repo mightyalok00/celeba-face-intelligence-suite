@@ -1,0 +1,20 @@
+# Pyrefly Configuration for CelebA Face Intelligence Suite
+python_version = "3.10"
+search_path = [".", "src", "app", "tests", "scripts"]
+strict = false
+
+[errors]
+missing-source-for-stubs = "ignore"
+missing-import = "ignore"
+unnecessary-type-conversion = "ignore"
+bad-index = "ignore"
+untyped-import = "ignore"
+unused-import = "ignore"
+unused-variable = "ignore"
+implicit-any = "ignore"
+missing-attribute = "ignore"
+bad-argument-type = "ignore"
+bad-assignment = "ignore"
+unsupported-operation = "ignore"
+not-iterable = "ignore"
+bad-argument-count = "ignore"

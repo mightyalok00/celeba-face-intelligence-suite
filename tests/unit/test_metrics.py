@@ -10,7 +10,10 @@ from src.models.train_and_evaluate import compute_comprehensive_metrics
 
 
 def test_perfect_predictions_metrics():
-    """Verify that perfect predictions yield 1.0 / 100% across all metrics."""
+    """
+    Verify that perfect predictions yield 1.0 / 100% across all evaluation metrics,
+    with zero off-diagonal entries in the confusion matrix and minimal log loss.
+    """
     y_true = np.array([0, 0, 1, 1, 0, 1, 0, 1])
     y_prob = np.array([0.01, 0.05, 0.95, 0.99, 0.02, 0.98, 0.04, 0.96])
 
@@ -27,7 +30,10 @@ def test_perfect_predictions_metrics():
 
 
 def test_inverted_predictions_metrics():
-    """Verify metrics behaviour under completely inverted predictions."""
+    """
+    Verify metrics behaviour under completely inverted predictions,
+    confirming accuracy, precision, recall, and ROC-AUC collapse to 0.0.
+    """
     y_true = np.array([0, 0, 1, 1])
     y_prob = np.array([0.9, 0.8, 0.1, 0.2])
 
@@ -42,7 +48,10 @@ def test_inverted_predictions_metrics():
 
 
 def test_metrics_types_and_ranges():
-    """Assert valid value boundaries for arbitrary continuous predictions."""
+    """
+    Assert valid value boundaries [0.0, 1.0] for arbitrary continuous predictions
+    and non-negative values for cross-entropy log loss.
+    """
     np.random.seed(42)
     y_true = np.random.randint(0, 2, size=50)
     y_prob = np.random.uniform(0.0, 1.0, size=50)

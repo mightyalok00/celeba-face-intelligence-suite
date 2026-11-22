@@ -1,8 +1,8 @@
 """
 Pytest configuration and shared test fixtures for CelebA Face AI & Intelligence System.
+Configures test environment, dependency paths, and synthetic fixtures for unit and integration testing.
 """
 
-import os
 import sys
 from pathlib import Path
 
@@ -19,7 +19,10 @@ if str(PROJECT_ROOT) not in sys.path:
 
 @pytest.fixture(autouse=True)
 def clean_test_environment(monkeypatch):
-    """Ensure standard environment variables for tests without leaking secrets."""
+    """
+    Ensure standard environment variables for tests without leaking secrets.
+    Sets mock database credentials to verify environment-driven connectivity.
+    """
     monkeypatch.setenv("MYSQL_HOST", "127.0.0.1")
     monkeypatch.setenv("MYSQL_USER", "test_user")
     monkeypatch.setenv("MYSQL_PASSWORD", "test_pass_secure")
@@ -29,7 +32,12 @@ def clean_test_environment(monkeypatch):
 
 @pytest.fixture
 def sample_feature_matrix():
-    """Generates a synthetic binary attribute feature matrix for 100 samples."""
+    """
+    Generates a synthetic binary attribute feature matrix for 100 samples:
+    - 40 binary CelebA attribute columns {-1.0, 1.0}
+    - Deterministic target label (e.g., smile status)
+    - 20 distinct identities (person_id) with 5 images each to test group disjointness.
+    """
     np.random.seed(42)
     # 40 binary CelebA attribute columns (-1 or 1)
     X = np.random.choice([-1.0, 1.0], size=(100, 40))
@@ -41,12 +49,15 @@ def sample_feature_matrix():
 
 @pytest.fixture
 def mock_metadata_df():
-    """Returns a synthetic pandas DataFrame resembling CelebA attributes."""
+    """
+    Returns a synthetic pandas DataFrame resembling CelebA attributes,
+    including person_id, image_id, and binary facial attribute indicators.
+    """
     data = {
         "image_id": [f"{i:06d}.jpg" for i in range(1, 21)],
         "person_id": [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10],
         "Smiling": [1, 1, -1, -1, 1, -1, 1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, -1, 1, -1],
         "Male": [1, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1],
-        "Young": [1, 1, 1, 1, -1, -1, 1, 1, 1, 1, -1, -1, 1, 1, 1, 1, -1, -1, 1, 1]
+        "Young": [1, 1, 1, 1, -1, -1, 1, 1, 1, 1, -1, -1, 1, 1, 1, 1, -1, -1, 1, 1],
     }
     return pd.DataFrame(data)

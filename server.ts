@@ -1,21 +1,20 @@
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import fs from "node:fs";
+import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel, Type } from "@google/genai";
 
-// Ensure environment variables from .env / .env.local are actively loaded
 dotenv.config();
 
-// Prevent dev server and container pre-warming from dying on unexpected errors
 process.on("uncaughtException", (err: Error) => {
-  console.error("[DevServer] Uncaught exception caught safely:", err.message);
+  console.error("[Server] Uncaught exception:", err.message);
 });
 
 process.on("unhandledRejection", (reason: unknown) => {
-  console.error("[DevServer] Unhandled rejection caught safely:", reason);
+  console.error("[Server] Unhandled rejection:", reason);
 });
 
 const __filename = fileURLToPath(import.meta.url);
@@ -25,12 +24,29 @@ const PROJECT_ROOT = __dirname;
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = "0.0.0.0";
 const DEFAULT_GEMINI_MODEL = "gemini-4-hydrogen";
+const FALLBACK_GEMINI_MODEL = "gemini-3.1-flash-lite";
+const PYTHON_ML_BACKEND_URL = (
+  process.env.PYTHON_ML_BACKEND_URL || "http://127.0.0.1:8001"
+).replace(/\/+$/, "");
 
-interface GalleryConfidence {
-  smiling: number;
-  young: number;
-  male: number;
-  eyeglasses: number;
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
+const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
+
+// ---------------------------------------------------------------------------
+// Types (erasable-only for direct Node 22 TypeScript execution compatibility)
+// ---------------------------------------------------------------------------
+
+interface ParsedBenchmarkRow {
+  model: string;
+  strategy: string;
+  testLoss: number;
+  accuracyPct: number;
+  precision: number;
+  recall: number;
+  f1Score: number;
+  rocAuc: number | null;
+  prAuc: number | null;
+  confusionMatrix: [[number, number], [number, number]] | null;
 }
 
 interface GalleryItem {
@@ -47,28 +63,181 @@ interface GalleryItem {
   male: boolean;
   young: boolean;
   attributes: string[];
-  confidence?: GalleryConfidence;
+  confidence?: {
+    smiling: number;
+    young: number;
+    male: number;
+    eyeglasses: number;
+  };
 }
 
-const SYSTEM_INSTRUCTION = `
-You are an expert Computer Vision and Facial Biometrics AI Assistant.
-Analyze the provided face image according to the CelebA biometrics schema and return ONLY a valid JSON object matching the requested schema.
-`.trim();
-
-function loadGalleryData(): GalleryItem[] {
-  const jsonPath = path.join(PROJECT_ROOT, "frontend", "gallery_data.json");
-  if (!fs.existsSync(jsonPath)) {
-    return [];
-  }
-  try {
-    const raw = fs.readFileSync(jsonPath, "utf-8");
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as GalleryItem[]) : [];
-  } catch (err) {
-    console.error("Failed to load gallery_data.json:", err);
-    return [];
-  }
+interface RateBucket {
+  timestamps: number[];
 }
+
+// ---------------------------------------------------------------------------
+// In-Memory Sliding-Window Rate Limiter
+// ---------------------------------------------------------------------------
+
+function createRateLimiter(options: {
+  windowMs: number;
+  maxRequests: number;
+  label: string;
+}) {
+  const store = new Map<string, RateBucket>();
+
+  // Periodic cleanup to avoid unbounded memory growth
+  const cleanupTimer = setInterval(() => {
+    const cutoff = Date.now() - options.windowMs;
+    for (const [key, bucket] of store.entries()) {
+      const fresh = bucket.timestamps.filter((t) => t > cutoff);
+      if (fresh.length === 0) {
+        store.delete(key);
+      } else {
+        bucket.timestamps = fresh;
+      }
+    }
+  }, Math.max(options.windowMs, 30_000));
+  cleanupTimer.unref();
+
+  return (req: Request, res: Response, next: NextFunction) => {
+    const forwarded = req.headers["x-forwarded-for"];
+    const clientIp = Array.isArray(forwarded)
+      ? forwarded[0]
+      : typeof forwarded === "string"
+        ? forwarded.split(",")[0].trim()
+        : req.ip || "unknown";
+    const key = `${options.label}:${clientIp}`;
+    const now = Date.now();
+    const cutoff = now - options.windowMs;
+
+    const bucket = store.get(key) ?? { timestamps: [] };
+    bucket.timestamps = bucket.timestamps.filter((t) => t > cutoff);
+
+    if (bucket.timestamps.length >= options.maxRequests) {
+      const oldest = bucket.timestamps[0] ?? now;
+      const retryAfterSec = Math.max(1, Math.ceil((oldest + options.windowMs - now) / 1000));
+      res.setHeader("Retry-After", String(retryAfterSec));
+      res.setHeader("X-RateLimit-Limit", String(options.maxRequests));
+      res.setHeader("X-RateLimit-Remaining", "0");
+      res.status(429).json({
+        status: "error",
+        error_code: "RATE_LIMIT_EXCEEDED",
+        message: `Rate limit exceeded for ${options.label}. Please retry in ${retryAfterSec}s.`,
+      });
+      return;
+    }
+
+    bucket.timestamps.push(now);
+    store.set(key, bucket);
+    res.setHeader("X-RateLimit-Limit", String(options.maxRequests));
+    res.setHeader(
+      "X-RateLimit-Remaining",
+      String(Math.max(0, options.maxRequests - bucket.timestamps.length))
+    );
+    next();
+  };
+}
+
+const apiReadLimiter = createRateLimiter({
+  windowMs: 60_000,
+  maxRequests: 120,
+  label: "api-read",
+});
+
+const aiInferenceLimiter = createRateLimiter({
+  windowMs: 60_000,
+  maxRequests: 25,
+  label: "ai-inference",
+});
+
+// ---------------------------------------------------------------------------
+// Image Validation (Magic-Byte + MIME + Size, Zero Disk Retention)
+// ---------------------------------------------------------------------------
+
+function validateImagePayload(payload: {
+  image_base64?: unknown;
+  mime_type?: unknown;
+}): { ok: true; mimeType: string; base64Data: string; buffer: Buffer } | { ok: false; status: number; message: string } {
+  if (typeof payload.image_base64 !== "string" || payload.image_base64.trim().length === 0) {
+    return { ok: false, status: 400, message: "No image_base64 payload provided." };
+  }
+
+  let rawBase64 = payload.image_base64.trim();
+  let declaredMime = typeof payload.mime_type === "string" ? payload.mime_type.trim().toLowerCase() : "";
+
+  const dataUrlMatch = /^data:([^;]+);base64,(.+)$/s.exec(rawBase64);
+  if (dataUrlMatch) {
+    declaredMime = dataUrlMatch[1].trim().toLowerCase();
+    rawBase64 = dataUrlMatch[2].replace(/\s+/g, "");
+  } else {
+    rawBase64 = rawBase64.replace(/\s+/g, "");
+  }
+
+  if (declaredMime && !ALLOWED_MIME_TYPES.has(declaredMime)) {
+    return {
+      ok: false,
+      status: 415,
+      message: `Unsupported image MIME type '${declaredMime}'. Allowed formats: JPEG, PNG, WebP.`,
+    };
+  }
+
+  // Approximate decoded byte length check before full allocation
+  const estimatedBytes = Math.floor((rawBase64.length * 3) / 4);
+  if (estimatedBytes > MAX_UPLOAD_BYTES) {
+    return {
+      ok: false,
+      status: 413,
+      message: "Uploaded image exceeds the 10 MB maximum size limit.",
+    };
+  }
+
+  const buffer = Buffer.from(rawBase64, "base64");
+  if (buffer.length === 0 || buffer.length > MAX_UPLOAD_BYTES) {
+    return {
+      ok: false,
+      status: 400,
+      message: buffer.length === 0 ? "Decoded image buffer is empty." : "Image exceeds 10 MB limit.",
+    };
+  }
+
+  // Magic-byte signature inspection
+  const isJpeg = buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  const isPng =
+    buffer.length >= 8 &&
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47 &&
+    buffer[4] === 0x0d &&
+    buffer[5] === 0x0a &&
+    buffer[6] === 0x1a &&
+    buffer[7] === 0x0a;
+  const isWebp =
+    buffer.length >= 12 &&
+    buffer.subarray(0, 4).toString("ascii") === "RIFF" &&
+    buffer.subarray(8, 12).toString("ascii") === "WEBP";
+
+  if (!isJpeg && !isPng && !isWebp) {
+    return {
+      ok: false,
+      status: 400,
+      message: "Invalid image file signature. Only authentic JPEG, PNG, and WebP images are accepted.",
+    };
+  }
+
+  const detectedMime = isJpeg ? "image/jpeg" : isPng ? "image/png" : "image/webp";
+  return {
+    ok: true,
+    mimeType: detectedMime,
+    base64Data: buffer.toString("base64"),
+    buffer,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Repository File Parsers (100% Real Repo Artifacts)
+// ---------------------------------------------------------------------------
 
 function parseCsvLine(line: string): string[] {
   const result: string[] = [];
@@ -95,219 +264,423 @@ function parseCsvLine(line: string): string[] {
   return result;
 }
 
-function loadBenchmarkMetrics(): Record<string, string | number>[] {
-  const candidates = [
-    path.join(PROJECT_ROOT, "reports", "benchmarks", "production_benchmark.csv"),
-    path.join(PROJECT_ROOT, "reports", "benchmarks", "model_benchmark_results.csv"),
-    path.join(PROJECT_ROOT, "reports", "model_benchmark_results.csv"),
-  ];
-  const csvPath = candidates.find((p) => fs.existsSync(p)) || "";
-  if (!csvPath) {
-    return [];
-  }
+function parseConfusionMatrix(raw: string | undefined): [[number, number], [number, number]] | null {
+  if (!raw) return null;
   try {
-    const raw = fs.readFileSync(csvPath, "utf-8");
-    const lines = raw
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
-    if (lines.length < 2) {
-      return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (
+      Array.isArray(parsed) &&
+      parsed.length === 2 &&
+      Array.isArray(parsed[0]) &&
+      parsed[0].length === 2 &&
+      Array.isArray(parsed[1]) &&
+      parsed[1].length === 2
+    ) {
+      return [
+        [Number(parsed[0][0]), Number(parsed[0][1])],
+        [Number(parsed[1][0]), Number(parsed[1][1])],
+      ];
     }
-    const headers = parseCsvLine(lines[0]);
-    return lines.slice(1).map((line) => {
-      const values = parseCsvLine(line);
-      const record: Record<string, string | number> = {};
-      headers.forEach((header, idx) => {
-        const val = values[idx] ?? "";
-        const num = Number(val);
-        record[header] = val !== "" && !Number.isNaN(num) ? num : val;
-      });
-      return record;
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function parseAccuracyPct(raw: unknown): number {
+  if (typeof raw === "number") return raw <= 1 ? Number((raw * 100).toFixed(2)) : raw;
+  const cleaned = String(raw ?? "0").replace("%", "").trim();
+  const num = Number(cleaned);
+  return Number.isFinite(num) ? num : 0;
+}
+
+function parseBenchmarkCsv(relativePath: string): ParsedBenchmarkRow[] {
+  const fullPath = path.join(PROJECT_ROOT, relativePath);
+  if (!fs.existsSync(fullPath)) return [];
+  const raw = fs.readFileSync(fullPath, "utf-8");
+  const lines = raw
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+  if (lines.length < 2) return [];
+
+  const headers = parseCsvLine(lines[0]);
+  return lines.slice(1).map((line) => {
+    const vals = parseCsvLine(line);
+    const map: Record<string, string> = {};
+    headers.forEach((h, idx) => {
+      map[h] = vals[idx] ?? "";
     });
-  } catch (err) {
-    console.error("Failed to load model_benchmark_results.csv:", err);
-    return [];
-  }
-}
-
-function loadModelRegistry(): Record<string, unknown> {
-  const registryPath = path.join(PROJECT_ROOT, "models", "model_registry.json");
-  if (!fs.existsSync(registryPath)) {
-    return { evaluated_models: [] };
-  }
-  try {
-    return JSON.parse(fs.readFileSync(registryPath, "utf-8")) as Record<string, unknown>;
-  } catch (err) {
-    console.error("Failed to load model_registry.json:", err);
-    return { evaluated_models: [] };
-  }
-}
-
-function executeMcpFaceIdentification(imageId: string) {
-  const cleanId = imageId.replace(/\.png$/i, ".jpg").replace(/\.jpeg$/i, ".jpg");
-  const reqId = Date.now() % 100000;
-  const startTime = performance.now();
-
-  const mcpRequest = {
-    jsonrpc: "2.0",
-    id: reqId,
-    method: "tools/call",
-    params: {
-      name: "mysql_identify_face",
-      arguments: { image_id: cleanId, database: "celeba_db" },
-    },
-  };
-
-  const gallery = loadGalleryData();
-  const stem = cleanId.replace(/\.jpg$/i, "");
-  const matched = gallery.find((g) => g.filename.includes(stem));
-  const execMs = Number((performance.now() - startTime).toFixed(2));
-
-  if (!matched) {
-    const mcpErrResponse = {
-      jsonrpc: "2.0",
-      id: reqId,
-      error: {
-        code: -32602,
-        message: `Image ID ${cleanId} not found in celeba_db or gallery index`,
-        details: "Curated gallery index fallback active (external MySQL unavailable in ephemeral runtime)",
-      },
+    const roc = map["ROC-AUC"] ? Number(map["ROC-AUC"]) : NaN;
+    const pr = map["PR-AUC"] ? Number(map["PR-AUC"]) : NaN;
+    return {
+      model: map["Model Configuration"] || "Unknown",
+      strategy: map["Strategy"] || "",
+      testLoss: Number(map["Test Loss"] || 0),
+      accuracyPct: parseAccuracyPct(map["Accuracy"]),
+      precision: Number(map["Precision"] || 0),
+      recall: Number(map["Recall"] || 0),
+      f1Score: Number(map["F1-Score"] || 0),
+      rocAuc: Number.isFinite(roc) ? roc : null,
+      prAuc: Number.isFinite(pr) ? pr : null,
+      confusionMatrix: parseConfusionMatrix(map["Confusion Matrix"]),
     };
-    return { request: mcpRequest, response: mcpErrResponse, structured: null };
-  }
-
-  const pad = (val: string | number, width = 23) => String(val).padEnd(width, " ");
-  const gender = matched.male ? "Male" : "Female";
-  const expression = matched.smiling ? "Smiling" : "Neutral";
-  const eyeglasses = matched.eyeglasses ? "Yes" : "No";
-  const ageGroup = matched.young ? "Young" : "Senior";
-  const clusterCount = gallery.filter((g) => g.cluster_id === matched.cluster_id).length;
-
-  const formattedTable = [
-    "+-----------------------------+-------------------------+",
-    "| Metric                      | Value                   |",
-    "+-----------------------------+-------------------------+",
-    `| Image ID                    | ${pad(cleanId)} |`,
-    `| Detected Person             | ${pad(matched.person_name)} |`,
-    `| Cluster / Identity ID       | #${pad(matched.ground_truth_id, 22)} |`,
-    `| Gender                      | ${pad(gender)} |`,
-    `| Expression                  | ${pad(expression)} |`,
-    `| Eyeglasses                  | ${pad(eyeglasses)} |`,
-    `| Age Group                   | ${pad(ageGroup)} |`,
-    `| Status                      | ${pad("Curated Fallback Index")} |`,
-    `| Provenance                  | ${pad("Ground-Truth Reference")} |`,
-    "+-----------------------------+-------------------------+",
-  ].join("\n");
-
-  const structuredFallback = {
-    image_id: cleanId,
-    person_name: matched.person_name,
-    identity_cluster_id: matched.ground_truth_id,
-    gender,
-    age_group: ageGroup,
-    expression,
-    eyeglasses,
-    total_photos: clusterCount,
-    confidence: matched.confidence?.young ?? 0.98,
-    is_fallback: true,
-    source: "Curated Ground-Truth Reference (In-Memory Gallery Index)",
-  };
-
-  const mcpResponse = {
-    jsonrpc: "2.0",
-    id: reqId,
-    result: {
-      content: [{ type: "text", text: formattedTable }],
-      structured: structuredFallback,
-      source: structuredFallback.source,
-      executionTimeMs: execMs,
-    },
-  };
-
-  return { request: mcpRequest, response: mcpResponse, structured: structuredFallback };
+  });
 }
 
-function resolveGeminiModel(requestedModel?: string): string {
-  const deprecated = new Set([
-    "gemini-1.5-flash",
-    "gemini-1.5-pro",
-    "gemini-pro",
-    "gemini-2.0-flash",
-    "gemini-2.0-pro",
-    "gemini-2.0-flash-thinking",
-  ]);
-  if (!requestedModel || deprecated.has(requestedModel.trim().toLowerCase())) {
-    return DEFAULT_GEMINI_MODEL;
+function readJsonSafe<T>(relativePath: string, fallback: T): T {
+  const fullPath = path.join(PROJECT_ROOT, relativePath);
+  if (!fs.existsSync(fullPath)) return fallback;
+  try {
+    return JSON.parse(fs.readFileSync(fullPath, "utf-8")) as T;
+  } catch {
+    return fallback;
   }
-  return requestedModel.trim();
 }
 
-function extractInlineImage(payload: {
-  image?: string;
-  image_path?: string;
-  image_base64?: string;
-  mime_type?: string;
-}): { mimeType: string; data: string; label: string } | null {
-  if (typeof payload.image_base64 === "string" && payload.image_base64.trim().length > 0) {
-    const raw = payload.image_base64.trim();
-    const dataUrlMatch = /^data:([^;]+);base64,(.+)$/s.exec(raw);
-    if (dataUrlMatch) {
+function loadGalleryData(): GalleryItem[] {
+  return readJsonSafe<GalleryItem[]>("frontend/gallery_data.json", []);
+}
+
+function getCheckpointInventory() {
+  const expected = [
+    { architecture: "Spatial BiLSTM", filename: "bilstm.pt" },
+    { architecture: "Vision Transformer", filename: "vision_transformer.pt" },
+    { architecture: "Residual CNN", filename: "residual_cnn.pt" },
+    { architecture: "ANN", filename: "ann.pt" },
+  ];
+  return expected.map((item) => {
+    const fullPath = path.join(PROJECT_ROOT, "models", "checkpoints", item.filename);
+    const exists = fs.existsSync(fullPath);
+    const sizeBytes = exists ? fs.statSync(fullPath).size : null;
+    return {
+      architecture: item.architecture,
+      filename: item.filename,
+      exists,
+      sizeBytes,
+      sizeMb: sizeBytes !== null ? (sizeBytes / (1024 * 1024)).toFixed(2) : null,
+    };
+  });
+}
+
+let cachedIdentityStats: { totalMappings: number; uniqueIdentities: number } | null = null;
+function getIdentityFileStats() {
+  if (cachedIdentityStats) return cachedIdentityStats;
+  const idPath = path.join(PROJECT_ROOT, "data", "metadata", "identity_CelebA.txt");
+  if (!fs.existsSync(idPath)) {
+    return { totalMappings: 0, uniqueIdentities: 0 };
+  }
+  const raw = fs.readFileSync(idPath, "utf-8");
+  const lines = raw.split(/\r?\n/);
+  let count = 0;
+  const ids = new Set<string>();
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    count++;
+    const parts = trimmed.split(/\s+/);
+    if (parts[1]) ids.add(parts[1]);
+  }
+  cachedIdentityStats = { totalMappings: count, uniqueIdentities: ids.size };
+  return cachedIdentityStats;
+}
+
+function getSplitManifestSummary() {
+  const splitPath = path.join(PROJECT_ROOT, "reproducibility", "split_manifest.csv");
+  if (!fs.existsSync(splitPath)) {
+    return { totalRows: 0, splits: [], identityOverlapCount: 0 };
+  }
+  const lines = fs
+    .readFileSync(splitPath, "utf-8")
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const bySplit = new Map<string, { images: number; ids: Set<string> }>();
+  for (const line of lines.slice(1)) {
+    const [, personId, split] = parseCsvLine(line);
+    if (!split) continue;
+    const entry = bySplit.get(split) ?? { images: 0, ids: new Set<string>() };
+    entry.images += 1;
+    if (personId) entry.ids.add(personId);
+    bySplit.set(split, entry);
+  }
+
+  const trainIds = bySplit.get("train")?.ids ?? new Set<string>();
+  const valIds = bySplit.get("val")?.ids ?? new Set<string>();
+  const testIds = bySplit.get("test")?.ids ?? new Set<string>();
+  let overlap = 0;
+  for (const id of testIds) {
+    if (trainIds.has(id) || valIds.has(id)) overlap++;
+  }
+
+  return {
+    totalRows: Math.max(0, lines.length - 1),
+    splits: Array.from(bySplit.entries()).map(([split, data]) => ({
+      split,
+      images: data.images,
+      uniqueIdentities: data.ids.size,
+    })),
+    identityOverlapCount: overlap,
+  };
+}
+
+function getCelebritiesCount(): number {
+  const celebPath = path.join(PROJECT_ROOT, "data", "metadata", "celebrities.csv");
+  if (!fs.existsSync(celebPath)) return 0;
+  const lines = fs
+    .readFileSync(celebPath, "utf-8")
+    .split(/\r?\n/)
+    .filter((l) => l.trim().length > 0);
+  return Math.max(0, lines.length - 1);
+}
+
+// ---------------------------------------------------------------------------
+// Upstream Probes (Python FastAPI ML Backend & MySQL TCP Check)
+// ---------------------------------------------------------------------------
+
+async function probePythonMlBackend(): Promise<{
+  url: string;
+  reachable: boolean;
+  engineReady: boolean;
+  verifiedCheckpoints: string[];
+  latencyMs: number | null;
+  error: string | null;
+}> {
+  const t0 = performance.now();
+  try {
+    const resp = await fetch(`${PYTHON_ML_BACKEND_URL}/health`, {
+      signal: AbortSignal.timeout(1200),
+    });
+    const latencyMs = Number((performance.now() - t0).toFixed(1));
+    if (!resp.ok) {
       return {
-        mimeType: dataUrlMatch[1],
-        data: dataUrlMatch[2],
-        label: payload.image || "uploaded_image",
+        url: PYTHON_ML_BACKEND_URL,
+        reachable: true,
+        engineReady: false,
+        verifiedCheckpoints: [],
+        latencyMs,
+        error: `FastAPI returned HTTP ${resp.status}`,
+      };
+    }
+    const data = (await resp.json()) as {
+      service?: string;
+      engine_ready?: boolean;
+      verified_checkpoints?: string[];
+      error?: string | null;
+    };
+    if (data.service !== "celeba-fastapi-ml") {
+      return {
+        url: PYTHON_ML_BACKEND_URL,
+        reachable: false,
+        engineReady: false,
+        verifiedCheckpoints: [],
+        latencyMs,
+        error: `Endpoint at ${PYTHON_ML_BACKEND_URL} is not the CelebA FastAPI ML service (service="${data.service ?? "unknown"}").`,
       };
     }
     return {
-      mimeType: payload.mime_type || "image/jpeg",
-      data: raw,
-      label: payload.image || "uploaded_image",
+      url: PYTHON_ML_BACKEND_URL,
+      reachable: true,
+      engineReady: Boolean(data.engine_ready),
+      verifiedCheckpoints: Array.isArray(data.verified_checkpoints) ? data.verified_checkpoints : [],
+      latencyMs,
+      error: data.error ?? null,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Connection failed";
+    return {
+      url: PYTHON_ML_BACKEND_URL,
+      reachable: false,
+      engineReady: false,
+      verifiedCheckpoints: [],
+      latencyMs: null,
+      error: `Python FastAPI ML service offline at ${PYTHON_ML_BACKEND_URL} (${message})`,
+    };
+  }
+}
+
+async function probeMysqlStatus(): Promise<{
+  configured: boolean;
+  host: string | null;
+  port: number;
+  database: string | null;
+  reachable: boolean;
+  error: string | null;
+}> {
+  const host = process.env.MYSQL_HOST || null;
+  const user = process.env.MYSQL_USER || null;
+  const password = process.env.MYSQL_PASSWORD || null;
+  const database = process.env.MYSQL_DATABASE || null;
+  const port = Number(process.env.MYSQL_PORT) || 3306;
+
+  if (!host || !user || !password || !database) {
+    return {
+      configured: false,
+      host,
+      port,
+      database,
+      reachable: false,
+      error: "MySQL environment variables (MYSQL_HOST, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE) are not configured.",
     };
   }
 
-  const target = (payload.image || payload.image_path || "").trim();
-  const gallery = loadGalleryData();
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host, port });
+    const timer = setTimeout(() => {
+      socket.destroy();
+      resolve({
+        configured: true,
+        host,
+        port,
+        database,
+        reachable: false,
+        error: `TCP timeout connecting to MySQL at ${host}:${port}`,
+      });
+    }, 800);
 
-  if (target) {
-    const stem = path.basename(target).replace(/\.(png|jpe?g)$/i, "");
-    const match = gallery.find((g) => g.filename.includes(stem));
-    if (match?.thumbnail) {
-      const m = /^data:([^;]+);base64,(.+)$/s.exec(match.thumbnail);
-      if (m) {
-        return { mimeType: m[1], data: m[2], label: match.filename };
+    socket.on("connect", () => {
+      clearTimeout(timer);
+      socket.end();
+      resolve({
+        configured: true,
+        host,
+        port,
+        database,
+        reachable: true,
+        error: null,
+      });
+    });
+
+    socket.on("error", (err) => {
+      clearTimeout(timer);
+      resolve({
+        configured: true,
+        host,
+        port,
+        database,
+        reachable: false,
+        error: err.message,
+      });
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Gemini Client (Server-Side Only, Privacy-Preserving)
+// ---------------------------------------------------------------------------
+
+function createGeminiClient(): GoogleGenAI | null {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+  return new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      headers: {
+        "User-Agent": "aistudio-build",
+      },
+    },
+  });
+}
+
+function isTransientGeminiError(err: unknown): boolean {
+  if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
+    return true;
+  }
+  const msg = err instanceof Error ? err.message : String(err);
+  return (
+    msg.includes("503") ||
+    msg.includes("504") ||
+    msg.includes("UNAVAILABLE") ||
+    msg.includes("DEADLINE_EXCEEDED") ||
+    msg.includes("429") ||
+    msg.includes("RESOURCE_EXHAUSTED") ||
+    msg.toLowerCase().includes("high demand") ||
+    msg.toLowerCase().includes("timed out") ||
+    msg.toLowerCase().includes("timeout") ||
+    msg.toLowerCase().includes("aborted") ||
+    msg.toLowerCase().includes("fetch failed")
+  );
+}
+
+async function callGeminiWithFallback<T>(
+  runner: (model: string, abortSignal: AbortSignal) => Promise<T>
+): Promise<{ result: T; modelUsed: string }> {
+  const attempts = [
+    { model: DEFAULT_GEMINI_MODEL, timeoutMs: 20_000 },
+    { model: FALLBACK_GEMINI_MODEL, timeoutMs: 35_000 },
+  ];
+  let lastErr: unknown;
+
+  for (let i = 0; i < attempts.length; i++) {
+    const { model, timeoutMs } = attempts[i];
+    try {
+      const result = await runner(model, AbortSignal.timeout(timeoutMs));
+      return { result, modelUsed: model };
+    } catch (err) {
+      lastErr = err;
+      if (i === attempts.length - 1 || !isTransientGeminiError(err)) {
+        throw err;
       }
-    }
-
-    const safeResolved = path.resolve(PROJECT_ROOT, target);
-    if (
-      safeResolved.startsWith(PROJECT_ROOT + path.sep) &&
-      fs.existsSync(safeResolved) &&
-      fs.statSync(safeResolved).isFile()
-    ) {
-      const ext = path.extname(safeResolved).toLowerCase();
-      const mimeType = ext === ".png" ? "image/png" : "image/jpeg";
-      const data = fs.readFileSync(safeResolved).toString("base64");
-      return { mimeType, data, label: path.basename(safeResolved) };
-    }
-  } else if (gallery.length > 0 && gallery[0].thumbnail) {
-    const m = /^data:([^;]+);base64,(.+)$/s.exec(gallery[0].thumbnail);
-    if (m) {
-      return { mimeType: m[1], data: m[2], label: gallery[0].filename };
+      await new Promise((resolve) => setTimeout(resolve, 300));
     }
   }
-
-  return null;
+  throw lastErr;
 }
+
+const PRIVACY_ANALYZER_SYSTEM_INSTRUCTION = `
+You are a Computer Vision and Facial Expression Quality Assistant for CelebA AI Studio.
+Analyze ONLY visible, non-sensitive facial expression, visual accessories, hair color, and photographic quality cues (lighting, framing, occlusion).
+STRICT PRIVACY RULES:
+1. Do NOT attempt to identify any specific person or celebrity by name.
+2. Do NOT infer or speculate on sensitive personal characteristics (race, ethnicity, nationality, religion, health conditions, socioeconomic status, or sexual orientation).
+3. Return ONLY valid JSON matching the requested schema.
+`.trim();
+
+function buildChatSystemInstruction(): string {
+  const prodRows = parseBenchmarkCsv("reports/benchmarks/production_benchmark.csv").map((r) => ({
+    model: r.model,
+    acc: r.accuracyPct,
+    f1: r.f1Score,
+    rocAuc: r.rocAuc,
+  }));
+  const smokeRows = parseBenchmarkCsv("reports/benchmarks/ci_smoke_test_benchmark.csv").map((r) => ({
+    model: r.model,
+    acc: r.accuracyPct,
+    f1: r.f1Score,
+    rocAuc: r.rocAuc,
+  }));
+  const latestRun = readJsonSafe<{ optimal_ensemble_weights?: Record<string, number> }>(
+    "reports/benchmarks/latest_training_run.json",
+    {}
+  );
+  const manifest = readJsonSafe<Record<string, unknown>>("reproducibility/dataset_manifest.json", {});
+
+  return `
+You are the CelebA AI — Face Intelligence Studio Assistant.
+Help engineers and researchers understand the architectures, evaluation protocols, dataset analytics, fairness audit, and APIs in this repository.
+Always cite exact numbers from the repository ground truth below and clearly distinguish real-image holdout benchmarks from synthetic CI smoke-test benchmarks. Never invent metrics or predictions.
+
+Repository Ground Truth:
+- Dataset: CelebA (${manifest.total_images ?? 202599} images, ${manifest.total_unique_identities ?? 10177} identities, 40 attributes, canonical 64x64x3, GroupShuffleSplit + 5-fold StratifiedGroupKFold with 0% identity leakage).
+- Real-Image Production Holdout (75 samples, Target: Smiling, reports/benchmarks/production_benchmark.csv): ${JSON.stringify(prodRows)}
+- Synthetic CI Smoke-Test (30 synthetic samples, reports/benchmarks/ci_smoke_test_benchmark.csv): ${JSON.stringify(smokeRows)}
+- SLSQP Optimal Ensemble Weights (latest_training_run.json): ${JSON.stringify(latestRun.optimal_ensemble_weights ?? {})}
+- Fairness Audit (docs/AUDIT_AND_EVALUATION.md): Male/Female Disparate Impact Ratio 0.9275 (EEOC 4/5ths compliant >= 0.80); Young/Senior Disparate Impact Ratio 0.8832 (EEOC 4/5ths compliant).
+- Privacy & Security: Zero disk retention, magic-byte upload validation, explicit camera consent, rate limiting, no individual identification or sensitive characteristic inference.
+`.trim();
+}
+
+// ---------------------------------------------------------------------------
+// Express App Setup
+// ---------------------------------------------------------------------------
 
 const app = express();
 app.use(express.json({ limit: "15mb" }));
 
-// CORS headers matching original server
+// CORS & Security Headers
 app.use((req: Request, res: Response, next: NextFunction) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "no-referrer");
   if (req.method === "OPTIONS") {
     res.status(204).end();
     return;
@@ -315,258 +688,693 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-// Primary web interface routes
-app.get(["/", "/index.html"], (_req: Request, res: Response) => {
-  const indexPath = path.join(PROJECT_ROOT, "frontend", "index.html");
-  if (!fs.existsSync(indexPath)) {
-    res.status(404).send("frontend/index.html not found");
-    return;
-  }
-  res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.sendFile(indexPath);
+// Health & Readiness Probes
+app.head(["/health", "/healthz", "/_ah/health", "/api/health", "/ping"], (_req: Request, res: Response) => {
+  res.status(200).end();
 });
 
-// Gallery JSON endpoints
-app.get(["/api/gallery", "/gallery_data.json"], (_req: Request, res: Response) => {
-  res.json(loadGalleryData());
-});
-
-// Pre-warming HEAD probe handler for container orchestrators and health checks
-app.head(
-  [
-    "/",
-    "/index.html",
-    "/health",
-    "/healthz",
-    "/_ah/health",
-    "/_ah/start",
-    "/_ah/warmup",
-    "/api/health",
-    "/ping",
-    "/status",
-    "/api/dev/status",
-  ],
-  (_req: Request, res: Response) => {
-    res.status(200).end();
-  }
-);
-
-// Container pre-warming, load balancer, and health probe endpoints
-app.get(
-  [
-    "/health",
-    "/healthz",
-    "/_ah/health",
-    "/_ah/start",
-    "/_ah/warmup",
-    "/api/health",
-    "/ping",
-    "/status",
-  ],
-  (_req: Request, res: Response) => {
-    res.json({
-      status: "healthy",
-      service: "CelebA Face Intelligence",
-      provider: "Gemini API",
-      models: [DEFAULT_GEMINI_MODEL],
-      ready: true,
-      uptime: process.uptime(),
-      timestamp: new Date().toISOString(),
-    });
-  }
-);
-
-// Dev server status and runtime diagnostics endpoint
-app.get(["/api/dev/status", "/api/status"], (_req: Request, res: Response) => {
+app.get(["/health", "/healthz", "/_ah/health", "/api/health", "/ping"], (_req: Request, res: Response) => {
   res.json({
-    status: "online",
-    mode: process.env.NODE_ENV || "development",
-    service: "CelebA Face Intelligence Dev Server",
-    port: PORT,
-    gemini_api_configured: Boolean(process.env.GEMINI_API_KEY),
-    uptime_seconds: Number(process.uptime().toFixed(1)),
+    status: "healthy",
+    service: "CelebA AI — Face Intelligence Studio",
+    provider: "Gemini API + Express Gateway",
     ready: true,
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
   });
 });
 
-// Benchmarks CSV -> JSON endpoint
-app.get("/api/benchmarks", (_req: Request, res: Response) => {
-  res.json(loadBenchmarkMetrics());
+// Documented API Endpoints Catalog
+const API_DOCS = [
+  {
+    method: "GET",
+    path: "/api/benchmarks",
+    summary: "Returns real-image holdout benchmarks, latest training run, 5-fold CV results, and synthetic CI smoke-test metrics.",
+    authOrPolicy: "Read rate limit (120 req/min)",
+  },
+  {
+    method: "GET",
+    path: "/api/models",
+    summary: "Returns model registry, checkpoint file inventory, model cards, YAML hyperparameters, and live FastAPI status.",
+    authOrPolicy: "Read rate limit (120 req/min)",
+  },
+  {
+    method: "GET",
+    path: "/api/dataset/analytics",
+    summary: "Returns CelebA dataset manifest, identity-disjoint split counts, gallery attribute distributions, and figure URLs.",
+    authOrPolicy: "Read rate limit (120 req/min)",
+  },
+  {
+    method: "GET",
+    path: "/api/gallery",
+    summary: "Returns curated CelebA reference sample thumbnails and attributes for non-sensitive testing.",
+    authOrPolicy: "Read rate limit (120 req/min)",
+  },
+  {
+    method: "POST",
+    path: "/api/ml/predict",
+    summary: "Forwards validated facial image to Python FastAPI PyTorch/XGBoost inference backend. Returns 503 if backend is offline (no fake predictions).",
+    authOrPolicy: "AI inference rate limit (25 req/min), magic-byte validation, zero disk retention",
+  },
+  {
+    method: "POST",
+    path: "/api/gemini/analyze",
+    summary: "Executes server-side Gemini multimodal visual attribute & quality analysis without individual identification or sensitive profiling.",
+    authOrPolicy: "AI inference rate limit (25 req/min), server-side GEMINI_API_KEY, zero disk retention",
+  },
+  {
+    method: "POST",
+    path: "/api/gemini/chat",
+    summary: "Multi-turn Gemini AI assistant grounded with repository benchmarks, architectures, and fairness reports.",
+    authOrPolicy: "AI inference rate limit (25 req/min), server-side GEMINI_API_KEY",
+  },
+  {
+    method: "GET",
+    path: "/api/system/health",
+    summary: "Inspects live connectivity for Gemini API, Python FastAPI ML backend, MySQL celeba_db, checkpoints, and privacy controls.",
+    authOrPolicy: "Read rate limit (120 req/min)",
+  },
+  {
+    method: "GET",
+    path: "/api/docs",
+    summary: "Returns structured documentation of all CelebA AI Studio backend API routes.",
+    authOrPolicy: "Public",
+  },
+];
+
+app.get("/api/docs", (_req: Request, res: Response) => {
+  res.json({
+    service: "CelebA AI — Face Intelligence Studio API",
+    version: "2.5.0",
+    endpoints: API_DOCS,
+  });
 });
 
-// Model registry JSON endpoint
-app.get("/api/models", (_req: Request, res: Response) => {
-  res.json(loadModelRegistry());
+app.get("/api/benchmarks", apiReadLimiter, (_req: Request, res: Response) => {
+  const productionRows = parseBenchmarkCsv("reports/benchmarks/production_benchmark.csv");
+  const smokeRows = parseBenchmarkCsv("reports/benchmarks/ci_smoke_test_benchmark.csv");
+  const latestRun = readJsonSafe<{
+    timestamp?: string;
+    elapsed_seconds?: number;
+    train_samples?: number;
+    test_samples?: number;
+    optimal_ensemble_weights?: Record<string, number>;
+    benchmarks?: Array<Record<string, unknown>>;
+  }>("reports/benchmarks/latest_training_run.json", {});
+
+  const latestRows: ParsedBenchmarkRow[] = (latestRun.benchmarks ?? []).map((b) => ({
+    model: String(b["Model Configuration"] ?? "Unknown"),
+    strategy: String(b["Strategy"] ?? ""),
+    testLoss: Number(b["Test Loss"] ?? 0),
+    accuracyPct: parseAccuracyPct(b["Accuracy"]),
+    precision: Number(b["Precision"] ?? 0),
+    recall: Number(b["Recall"] ?? 0),
+    f1Score: Number(b["F1-Score"] ?? 0),
+    rocAuc: b["ROC-AUC"] !== undefined ? Number(b["ROC-AUC"]) : null,
+    prAuc: b["PR-AUC"] !== undefined ? Number(b["PR-AUC"]) : null,
+    confusionMatrix: parseConfusionMatrix(
+      b["Confusion Matrix"] !== undefined ? String(b["Confusion Matrix"]) : undefined
+    ),
+  }));
+
+  const cvPath = path.join(PROJECT_ROOT, "reports", "benchmarks", "cross_validation_results.csv");
+  const folds: { fold: number; valAccuracy: number }[] = [];
+  if (fs.existsSync(cvPath)) {
+    const cvLines = fs
+      .readFileSync(cvPath, "utf-8")
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    for (const line of cvLines.slice(1)) {
+      const [foldStr, accStr] = parseCsvLine(line);
+      const fold = Number(foldStr);
+      const valAccuracy = Number(accStr);
+      if (Number.isFinite(fold) && Number.isFinite(valAccuracy)) {
+        folds.push({ fold, valAccuracy });
+      }
+    }
+  }
+  const meanAccuracy =
+    folds.length > 0
+      ? Number((folds.reduce((sum, f) => sum + f.valAccuracy, 0) / folds.length).toFixed(4))
+      : 0;
+
+  res.json({
+    realImageProduction: {
+      sourceFile: "reports/benchmarks/production_benchmark.csv",
+      datasetType: "real_image_holdout",
+      sampleCount: 75,
+      targetAttribute: "Smiling",
+      rows: productionRows,
+    },
+    latestTrainingRun: {
+      sourceFile: "reports/benchmarks/latest_training_run.json",
+      datasetType: "real_image_training_run",
+      timestamp: latestRun.timestamp ?? "",
+      elapsedSeconds: latestRun.elapsed_seconds ?? 0,
+      trainSamples: latestRun.train_samples ?? 0,
+      testSamples: latestRun.test_samples ?? 0,
+      optimalEnsembleWeights: latestRun.optimal_ensemble_weights ?? {},
+      rows: latestRows,
+    },
+    ciSmokeTestSynthetic: {
+      sourceFile: "reports/benchmarks/ci_smoke_test_benchmark.csv",
+      datasetType: "synthetic_smoke_test",
+      sampleCount: 30,
+      note: "Synthetic CI pipeline validation dataset (30 generated samples). Kept strictly separate from real-image CelebA holdout benchmarks.",
+      rows: smokeRows,
+    },
+    crossValidation: {
+      sourceFile: "reports/benchmarks/cross_validation_results.csv",
+      folds,
+      meanAccuracy,
+    },
+  });
 });
 
-// Server-side Gemini multimodal face analysis endpoint
-app.post("/api/analyze", async (req: Request, res: Response) => {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
+app.get("/api/models", apiReadLimiter, async (_req: Request, res: Response) => {
+  const registry = readJsonSafe("models/model_registry.json", {
+    project: "CelebA Face AI & Intelligence System",
+    version: "2.5.0",
+    target_attribute: "Smiling",
+    identity_isolation_strategy: "StratifiedGroupKFold",
+    evaluated_models: [],
+  });
+  const checkpoints = getCheckpointInventory();
+
+  const cardSpecs = [
+    { id: "ensemble", title: "SLSQP Multi-Architecture Ensemble + TTA", filename: "ensemble_card.md" },
+    { id: "residual_cnn", title: "4-Stage Residual Conv2D CNN", filename: "residual_cnn_card.md" },
+    { id: "vision_transformer", title: "Vision Transformer (ViT)", filename: "vision_transformer_card.md" },
+  ];
+  const modelCards = cardSpecs
+    .map((spec) => {
+      const fullPath = path.join(PROJECT_ROOT, "reports", "model_cards", spec.filename);
+      if (!fs.existsSync(fullPath)) return null;
+      return {
+        ...spec,
+        content: fs.readFileSync(fullPath, "utf-8"),
+      };
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null);
+
+  const cfgPath = path.join(PROJECT_ROOT, "reproducibility", "config.yaml");
+  const reproducibilityConfigYaml = fs.existsSync(cfgPath)
+    ? fs.readFileSync(cfgPath, "utf-8")
+    : "";
+
+  const mlProbe = await probePythonMlBackend();
+
+  res.json({
+    registry,
+    checkpoints,
+    modelCards,
+    reproducibilityConfigYaml,
+    mlBackend: {
+      url: mlProbe.url,
+      online: mlProbe.reachable && mlProbe.engineReady,
+      verifiedCheckpoints: mlProbe.verifiedCheckpoints,
+      error: mlProbe.error,
+    },
+  });
+});
+
+app.get("/api/dataset/analytics", apiReadLimiter, (_req: Request, res: Response) => {
+  const manifest = readJsonSafe("reproducibility/dataset_manifest.json", {});
+  const experimentMetadata = readJsonSafe("reproducibility/experiment_metadata.json", {});
+  const splitManifestSummary = getSplitManifestSummary();
+  const identityStats = getIdentityFileStats();
+  const celebritiesCatalogCount = getCelebritiesCount();
+  const gallery = loadGalleryData();
+
+  const attrMap = new Map<string, number>();
+  const clusterSet = new Set<number>();
+  let smilingCount = 0;
+  let youngCount = 0;
+  let maleCount = 0;
+  let eyeglassesCount = 0;
+
+  for (const item of gallery) {
+    clusterSet.add(item.cluster_id);
+    if (item.smiling) smilingCount++;
+    if (item.young) youngCount++;
+    if (item.male) maleCount++;
+    if (item.eyeglasses) eyeglassesCount++;
+    for (const attr of item.attributes ?? []) {
+      attrMap.set(attr, (attrMap.get(attr) ?? 0) + 1);
+    }
+  }
+
+  const totalSamples = gallery.length;
+  const attributeCounts = Array.from(attrMap.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 14)
+    .map(([attribute, count]) => ({
+      attribute: attribute.replace(/_/g, " "),
+      count,
+      percentage: totalSamples > 0 ? Number(((count / totalSamples) * 100).toFixed(1)) : 0,
+    }));
+
+  const figuresDir = path.join(PROJECT_ROOT, "reports", "figures");
+  const figures: Array<{
+    filename: string;
+    title: string;
+    category: "dataset" | "performance" | "confusion_matrix";
+    url: string;
+  }> = [];
+
+  if (fs.existsSync(figuresDir)) {
+    const files = fs.readdirSync(figuresDir).filter((f) => f.endsWith(".png")).sort();
+    for (const filename of files) {
+      const category = filename.startsWith("cm_")
+        ? "confusion_matrix"
+        : filename.includes("attribute") || filename.includes("cluster") || filename.includes("cosine")
+          ? "dataset"
+          : "performance";
+      const title = filename
+        .replace(/\.png$/i, "")
+        .replace(/^cm_/, "Confusion Matrix: ")
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+      figures.push({
+        filename,
+        title,
+        category,
+        url: `/reports/figures/${encodeURIComponent(filename)}`,
+      });
+    }
+  }
+
+  res.json({
+    manifest,
+    experimentMetadata,
+    splitManifestSummary,
+    identityFileStats: {
+      ...identityStats,
+      celebritiesCatalogCount,
+    },
+    galleryStats: {
+      totalSamples,
+      uniqueClusters: clusterSet.size,
+      attributeCounts,
+      summaryRates: {
+        smiling: totalSamples > 0 ? Number(((smilingCount / totalSamples) * 100).toFixed(1)) : 0,
+        young: totalSamples > 0 ? Number(((youngCount / totalSamples) * 100).toFixed(1)) : 0,
+        male: totalSamples > 0 ? Number(((maleCount / totalSamples) * 100).toFixed(1)) : 0,
+        eyeglasses: totalSamples > 0 ? Number(((eyeglassesCount / totalSamples) * 100).toFixed(1)) : 0,
+      },
+    },
+    figures,
+  });
+});
+
+app.get("/api/gallery", apiReadLimiter, (_req: Request, res: Response) => {
+  // Strip ground-truth person names to avoid emphasizing individual identification in the studio UI
+  const sanitized = loadGalleryData().map((item) => ({
+    id: item.id,
+    filename: item.filename,
+    thumbnail: item.thumbnail,
+    cluster_id: item.cluster_id,
+    smiling: item.smiling,
+    eyeglasses: item.eyeglasses,
+    male: item.male,
+    young: item.young,
+    attributes: item.attributes,
+  }));
+  res.json(sanitized);
+});
+
+app.get("/api/system/health", apiReadLimiter, async (_req: Request, res: Response) => {
+  const [mlProbe, mysqlProbe] = await Promise.all([probePythonMlBackend(), probeMysqlStatus()]);
+  const checkpoints = getCheckpointInventory();
+  const geminiConfigured = Boolean(process.env.GEMINI_API_KEY);
+
+  res.json({
+    status: geminiConfigured || mlProbe.engineReady ? "healthy" : "degraded",
+    service: "CelebA AI — Face Intelligence Studio",
+    nodeVersion: process.version,
+    environment: process.env.NODE_ENV || "development",
+    port: PORT,
+    uptimeSeconds: Number(process.uptime().toFixed(1)),
+    timestamp: new Date().toISOString(),
+    services: {
+      geminiApi: {
+        configured: geminiConfigured,
+        defaultModel: DEFAULT_GEMINI_MODEL,
+        keyStorage: "server_env_only",
+      },
+      pythonMlBackend: mlProbe,
+      mysqlDatabase: mysqlProbe,
+    },
+    checkpoints,
+    privacyAndSecurity: {
+      imageRetention: "Zero retention (in-memory single-request processing only)",
+      identityInferenceBlocked: true,
+      sensitiveAttributeInferenceBlocked: true,
+      magicByteValidation: true,
+      maxUploadMb: 10,
+      rateLimiting: {
+        readWindowLimit: "120 requests / 60s per IP",
+        inferenceWindowLimit: "25 requests / 60s per IP",
+      },
+    },
+  });
+});
+
+// Real ML Inference Bridge -> Python FastAPI (PyTorch / XGBoost)
+// Strictly returns 503 if FastAPI ML backend is unavailable; never fabricates predictions.
+app.post("/api/ml/predict", aiInferenceLimiter, async (req: Request, res: Response) => {
+  const body = (req.body ?? {}) as {
+    image_base64?: unknown;
+    mime_type?: unknown;
+    architecture?: unknown;
+    use_tta?: unknown;
+  };
+
+  const validated = validateImagePayload(body);
+  if (!validated.ok) {
+    res.status(validated.status).json({
+      status: "error",
+      error_code: "INVALID_IMAGE_UPLOAD",
+      message: validated.message,
+    });
+    return;
+  }
+
+  const architecture =
+    typeof body.architecture === "string" && body.architecture.trim()
+      ? body.architecture.trim()
+      : "Vision Transformer";
+  const useTta = body.use_tta !== false;
+
+  try {
+    const form = new FormData();
+    const uint8 = new Uint8Array(validated.buffer);
+    const blob = new Blob([uint8], { type: validated.mimeType });
+    form.append("file", blob, "upload.jpg");
+    form.append("architecture", architecture);
+    form.append("use_tta", String(useTta));
+
+    const upstream = await fetch(`${PYTHON_ML_BACKEND_URL}/api/predict`, {
+      method: "POST",
+      body: form,
+      signal: AbortSignal.timeout(15_000),
+    });
+
+    const data = (await upstream.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!upstream.ok) {
+      res.status(upstream.status).json({
+        status: "error",
+        error_code: "ML_INFERENCE_ERROR",
+        message:
+          (typeof data.detail === "string" && data.detail) ||
+          (typeof data.message === "string" && data.message) ||
+          `Python FastAPI inference backend returned HTTP ${upstream.status}.`,
+        backend_url: PYTHON_ML_BACKEND_URL,
+      });
+      return;
+    }
+
+    res.json({
+      status: "success",
+      ...data,
+      retained_on_disk: false,
+    });
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : "Connection refused";
     res.status(503).json({
       status: "error",
+      error_code: "ML_BACKEND_UNAVAILABLE",
+      message:
+        `PyTorch/XGBoost FastAPI inference backend is unavailable at ${PYTHON_ML_BACKEND_URL} (${reason}). ` +
+        `Start it with "uvicorn backend.fastapi_app:app --host 0.0.0.0 --port 8001" in a Python environment with requirements.txt installed. ` +
+        `No synthetic or fallback predictions were generated.`,
+      backend_url: PYTHON_ML_BACKEND_URL,
+    });
+  }
+});
+
+// Server-Side Gemini Multimodal Face Visual Analysis (Privacy-Hardened)
+app.post("/api/gemini/analyze", aiInferenceLimiter, async (req: Request, res: Response) => {
+  const ai = createGeminiClient();
+  if (!ai) {
+    res.status(503).json({
+      status: "error",
+      error_code: "GEMINI_NOT_CONFIGURED",
       message: "GEMINI_API_KEY is not configured in the server environment.",
     });
     return;
   }
 
   const body = (req.body ?? {}) as {
-    image?: string;
-    image_path?: string;
-    image_base64?: string;
-    mime_type?: string;
-    model?: string;
-    additional_context?: string;
+    image_base64?: unknown;
+    mime_type?: unknown;
+    context_note?: unknown;
   };
 
-  const inlineImage = extractInlineImage(body);
-  if (!inlineImage) {
-    res.status(400).json({
+  const validated = validateImagePayload(body);
+  if (!validated.ok) {
+    res.status(validated.status).json({
       status: "error",
-      message: "Target image could not be resolved. Provide image_base64 or a valid gallery filename.",
+      error_code: "INVALID_IMAGE_UPLOAD",
+      message: validated.message,
     });
     return;
   }
 
-  const modelName = resolveGeminiModel(body.model);
-
+  const t0 = performance.now();
   try {
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          "User-Agent": "aistudio-build",
-        },
-      },
-    });
-
     let promptText =
-      "Analyze this face image and extract facial attributes according to CelebA standards.";
-    if (body.additional_context) {
-      promptText += `\nDatabase Context: ${body.additional_context}`;
+      "Analyze visible facial expression, hair color, eyeglasses/facial hair presence, and photographic quality (lighting, framing, occlusion) without identifying any individual or inferring sensitive personal characteristics.";
+    if (typeof body.context_note === "string" && body.context_note.trim()) {
+      promptText += ` Additional context: ${body.context_note.trim().slice(0, 300)}`;
     }
 
-    const response = await ai.models.generateContent({
-      model: modelName,
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              mimeType: inlineImage.mimeType,
-              data: inlineImage.data,
-            },
-          },
-          { text: promptText },
-        ],
-      },
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            expression: {
-              type: Type.OBJECT,
-              properties: {
-                is_smiling: { type: Type.BOOLEAN },
-                confidence: { type: Type.NUMBER },
-                primary_emotion: { type: Type.STRING },
+    const { result: response, modelUsed } = await callGeminiWithFallback((model, abortSignal) =>
+      ai.models.generateContent({
+        model,
+        contents: {
+          parts: [
+            {
+              inlineData: {
+                mimeType: validated.mimeType,
+                data: validated.base64Data,
               },
-              required: ["is_smiling", "confidence", "primary_emotion"],
             },
-            demographics: {
-              type: Type.OBJECT,
-              properties: {
-                apparent_age_group: { type: Type.STRING },
-                apparent_gender: { type: Type.STRING },
-                confidence: { type: Type.NUMBER },
-              },
-              required: ["apparent_age_group", "apparent_gender", "confidence"],
-            },
-            facial_attributes: {
-              type: Type.OBJECT,
-              properties: {
-                hair_color: { type: Type.STRING },
-                wearing_eyeglasses: { type: Type.BOOLEAN },
-                facial_hair: { type: Type.BOOLEAN },
-                notable_features: {
-                  type: Type.ARRAY,
-                  items: { type: Type.STRING },
-                },
-              },
-              required: [
-                "hair_color",
-                "wearing_eyeglasses",
-                "facial_hair",
-                "notable_features",
-              ],
-            },
-            reasoning_summary: { type: Type.STRING },
-          },
-          required: [
-            "expression",
-            "demographics",
-            "facial_attributes",
-            "reasoning_summary",
+            { text: promptText },
           ],
         },
-      },
-    });
+        config: {
+          abortSignal,
+          systemInstruction: PRIVACY_ANALYZER_SYSTEM_INSTRUCTION,
+          thinkingConfig: {
+            thinkingLevel:
+              model === FALLBACK_GEMINI_MODEL ? ThinkingLevel.MINIMAL : ThinkingLevel.LOW,
+          },
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              expression: {
+                type: Type.OBJECT,
+                properties: {
+                  is_smiling: { type: Type.BOOLEAN },
+                  confidence: { type: Type.NUMBER },
+                  primary_emotion: { type: Type.STRING },
+                },
+                required: ["is_smiling", "confidence", "primary_emotion"],
+              },
+              visual_attributes: {
+                type: Type.OBJECT,
+                properties: {
+                  hair_color: { type: Type.STRING },
+                  wearing_eyeglasses: { type: Type.BOOLEAN },
+                  facial_hair: { type: Type.BOOLEAN },
+                  headwear_or_accessories: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING },
+                  },
+                  notable_visual_cues: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING },
+                  },
+                },
+                required: [
+                  "hair_color",
+                  "wearing_eyeglasses",
+                  "facial_hair",
+                  "headwear_or_accessories",
+                  "notable_visual_cues",
+                ],
+              },
+              image_quality: {
+                type: Type.OBJECT,
+                properties: {
+                  lighting: { type: Type.STRING },
+                  framing: { type: Type.STRING },
+                  occlusion_level: { type: Type.STRING },
+                },
+                required: ["lighting", "framing", "occlusion_level"],
+              },
+              reasoning_summary: { type: Type.STRING },
+            },
+            required: ["expression", "visual_attributes", "image_quality", "reasoning_summary"],
+          },
+        },
+      })
+    );
 
-    const parsedAnalysis: unknown = JSON.parse((response.text ?? "{}").trim());
+    const parsed = JSON.parse((response.text ?? "{}").trim()) as unknown;
+    const latencyMs = Number((performance.now() - t0).toFixed(1));
 
     res.json({
       status: "success",
-      image: inlineImage.label,
-      google_ai_studio: {
-        status: "success",
-        source: "gemini_api",
-        model: modelName,
-        image: inlineImage.label,
-        analysis: parsedAnalysis,
-      },
+      source: "gemini_multimodal_api",
+      model: modelUsed,
+      retained_on_disk: false,
+      privacy_notice:
+        "Analyzed transiently in memory. No facial image was persisted and no individual identity or sensitive personal characteristics were inferred.",
+      latency_ms: latencyMs,
+      analysis: parsed,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Gemini API request failed";
-    console.error("Gemini /api/analyze error:", err);
+    console.error("[Gemini /api/gemini/analyze] Error:", message);
     res.status(502).json({
       status: "error",
-      model: modelName,
+      error_code: "GEMINI_UPSTREAM_ERROR",
+      model: DEFAULT_GEMINI_MODEL,
       message,
     });
   }
 });
 
-// MCP Face Identification JSON-RPC 2.0 endpoint
-app.post(["/api/mcp", "/api/mcp/identify"], (req: Request, res: Response) => {
-  const body = (req.body ?? {}) as { image_id?: string };
-  const imageId = typeof body.image_id === "string" && body.image_id.trim()
-    ? body.image_id.trim()
-    : "001553.jpg";
-  const result = executeMcpFaceIdentification(imageId);
-  res.json(result);
+// Server-Side Gemini AI Studio Chat Assistant
+app.post("/api/gemini/chat", aiInferenceLimiter, async (req: Request, res: Response) => {
+  const ai = createGeminiClient();
+  if (!ai) {
+    res.status(503).json({
+      status: "error",
+      error_code: "GEMINI_NOT_CONFIGURED",
+      message: "GEMINI_API_KEY is not configured in the server environment.",
+    });
+    return;
+  }
+
+  const body = (req.body ?? {}) as {
+    messages?: Array<{ role?: string; text?: string }>;
+  };
+
+  if (!Array.isArray(body.messages) || body.messages.length === 0) {
+    res.status(400).json({
+      status: "error",
+      message: "Provide a non-empty messages array.",
+    });
+    return;
+  }
+
+  const sanitizedHistory = body.messages
+    .slice(-14)
+    .filter((m) => typeof m.text === "string" && m.text.trim().length > 0)
+    .map((m) => ({
+      role: m.role === "model" ? "model" : "user",
+      parts: [{ text: String(m.text).trim().slice(0, 4000) }],
+    }));
+
+  if (sanitizedHistory.length === 0) {
+    res.status(400).json({
+      status: "error",
+      message: "No valid message content provided.",
+    });
+    return;
+  }
+
+  try {
+    const { result: response, modelUsed } = await callGeminiWithFallback((model, abortSignal) =>
+      ai.models.generateContent({
+        model,
+        contents: sanitizedHistory,
+        config: {
+          abortSignal,
+          systemInstruction: buildChatSystemInstruction(),
+          thinkingConfig: {
+            thinkingLevel:
+              model === FALLBACK_GEMINI_MODEL ? ThinkingLevel.MINIMAL : ThinkingLevel.LOW,
+          },
+        },
+      })
+    );
+
+    res.json({
+      status: "success",
+      model: modelUsed,
+      reply: (response.text ?? "").trim(),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Gemini chat request failed";
+    console.error("[Gemini /api/gemini/chat] Error:", message);
+    res.status(502).json({
+      status: "error",
+      error_code: "GEMINI_UPSTREAM_ERROR",
+      message,
+    });
+  }
 });
 
-// Static assets serving (safe subdirectories only)
-app.use("/frontend", express.static(path.join(PROJECT_ROOT, "frontend")));
+// Static Repository Assets (Figures, Model Cards, Docs, Legacy UI)
 app.use("/reports", express.static(path.join(PROJECT_ROOT, "reports")));
 app.use("/models", express.static(path.join(PROJECT_ROOT, "models")));
-app.use("/data", express.static(path.join(PROJECT_ROOT, "data")));
 app.use("/docs", express.static(path.join(PROJECT_ROOT, "docs")));
+app.use("/legacy", express.static(path.join(PROJECT_ROOT, "frontend")));
 
-app.use((_req: Request, res: Response) => {
-  res.status(404).json({ error: "Endpoint not found" });
+// API 404 handler
+app.use("/api", (_req: Request, res: Response) => {
+  res.status(404).json({ error: "API endpoint not found" });
 });
+
+// ---------------------------------------------------------------------------
+// Vite Dev Middleware / Production Static Serving + Server Boot
+// ---------------------------------------------------------------------------
 
 let serverInstance: ReturnType<typeof app.listen> | null = null;
 
-const gracefulShutdown = (signal: string) => {
-  console.log(`[DevServer] Received ${signal}. Shutting down cleanly...`);
-  if (serverInstance) {
-    serverInstance.close(() => {
-      console.log("[DevServer] Dev server stopped cleanly.");
-      process.exit(0);
+async function startServer(): Promise<void> {
+  const isProd = process.env.NODE_ENV === "production";
+  const distDir = path.join(PROJECT_ROOT, "dist");
+
+  if (!isProd) {
+    const { createServer: createViteServer } = await import("vite");
+    const vite = await createViteServer({
+      server: { middlewareMode: true, hmr: false },
+      appType: "spa",
     });
+    app.use(vite.middlewares);
+  } else if (fs.existsSync(distDir)) {
+    app.use(express.static(distDir));
+    app.get("/{*splat}", (_req: Request, res: Response) => {
+      res.sendFile(path.join(distDir, "index.html"));
+    });
+  } else {
+    app.get("/", (_req: Request, res: Response) => {
+      res.status(500).send("Production dist/ directory not built. Run npm run build.");
+    });
+  }
+
+  serverInstance = app.listen(PORT, HOST, () => {
+    console.log("======================================================================");
+    console.log("  CELEBA AI — FACE INTELLIGENCE STUDIO");
+    console.log(`  Listening on:          http://${HOST}:${PORT}`);
+    console.log(`  Mode:                  ${isProd ? "production" : "development (Vite)"}`);
+    console.log(`  Python ML Backend URL: ${PYTHON_ML_BACKEND_URL}`);
+    console.log(`  Gemini API Key:        ${process.env.GEMINI_API_KEY ? "configured" : "not set"}`);
+    console.log("======================================================================");
+  });
+}
+
+const gracefulShutdown = (signal: string) => {
+  console.log(`[Server] Received ${signal}. Shutting down...`);
+  if (serverInstance) {
+    serverInstance.close(() => process.exit(0));
   } else {
     process.exit(0);
   }
@@ -575,25 +1383,7 @@ const gracefulShutdown = (signal: string) => {
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
-function startDevServer(port: number, retries = 5): void {
-  serverInstance = app
-    .listen(port, HOST, () => {
-      console.log("======================================================================");
-      console.log("  CELEBA FACE INTELLIGENCE - APPLICATION DEV SERVER");
-      console.log(`  Dev server listening on: http://${HOST}:${port}`);
-      console.log(`  Web Interface:           http://localhost:${port}/`);
-      console.log(`  Pre-warming / Health:    http://localhost:${port}/health`);
-      console.log(`  Dev Server Diagnostics:  http://localhost:${port}/api/dev/status`);
-      console.log("======================================================================");
-    })
-    .on("error", (err: NodeJS.ErrnoException) => {
-      if (err.code === "EADDRINUSE" && retries > 0) {
-        console.warn(`[DevServer] Port ${port} is occupied. Retrying on port ${port + 1}...`);
-        startDevServer(port + 1, retries - 1);
-      } else {
-        console.error("[DevServer] Server initialization error:", err.message);
-      }
-    });
-}
-
-startDevServer(PORT);
+startServer().catch((err) => {
+  console.error("[Server] Failed to start:", err);
+  process.exit(1);
+});

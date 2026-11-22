@@ -34,9 +34,10 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
     pip install --no-cache-dir -r requirements.txt
 
-# Install Node.js Express & TypeScript dependencies
-COPY package.json tsconfig.json ./
-RUN npm install --omit=dev && npm cache clean --force
+# Install Node.js Express, React & Vite dependencies and build production bundle
+COPY package.json package-lock.json tsconfig.json vite.config.ts index.html ./
+COPY client ./client
+RUN npm ci && npm run build && npm cache clean --force
 
 # Copy application source, models, metadata, and frontend
 COPY . .
@@ -46,11 +47,12 @@ RUN chown -R appuser:appuser /app
 
 USER appuser
 
+ENV NODE_ENV=production
 EXPOSE 3000
 
 # Container health probe checking the pre-warming /health endpoint
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:${PORT}/health || exit 1
 
-# Default command launches the Google AI Studio multimodal web server
+# Default command launches CelebA AI — Face Intelligence Studio
 CMD ["node", "server.ts"]

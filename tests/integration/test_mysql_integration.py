@@ -55,9 +55,13 @@ def test_live_mysql_roundtrip_when_service_available():
     when an active MySQL service endpoint is available (e.g. in GitHub Actions CI container).
     Gracefully skips if MySQL service is not reachable in local developer environment.
     """
+    import importlib
     import os
 
-    import pymysql
+    try:
+        pymysql = importlib.import_module("pymysql")
+    except ImportError:
+        pytest.skip("PyMySQL not installed; skipping live integration test.")
 
     host = os.getenv("MYSQL_HOST")
     if not host or host == "192.0.2.1":

@@ -8,9 +8,10 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Maximize2, Search } from "lucide-react";
+import { Maximize2 } from "lucide-react";
 import { FigureLightbox, type LightboxFigure } from "../components/FigureLightbox";
 import { GlassCard } from "../components/GlassCard";
+import { GooglePhotosGallery } from "../components/GooglePhotosGallery";
 import type { DatasetAnalyticsResponse, GallerySample } from "../types";
 
 interface DatasetAnalyticsPageProps {
@@ -19,10 +20,6 @@ interface DatasetAnalyticsPageProps {
 
 export function DatasetAnalyticsPage({ analytics }: DatasetAnalyticsPageProps) {
   const [samples, setSamples] = useState<GallerySample[]>([]);
-  const [query, setQuery] = useState("");
-  const [attrFilter, setAttrFilter] = useState<"all" | "smiling" | "eyeglasses" | "young" | "male">(
-    "all"
-  );
   const [activeFigure, setActiveFigure] = useState<LightboxFigure | null>(null);
 
   useEffect(() => {
@@ -34,21 +31,6 @@ export function DatasetAnalyticsPage({ analytics }: DatasetAnalyticsPageProps) {
       .catch(() => {});
   }, []);
 
-  const filteredSamples = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return samples.filter((s) => {
-      if (attrFilter === "smiling" && !s.smiling) return false;
-      if (attrFilter === "eyeglasses" && !s.eyeglasses) return false;
-      if (attrFilter === "young" && !s.young) return false;
-      if (attrFilter === "male" && !s.male) return false;
-      if (!q) return true;
-      return (
-        s.filename.toLowerCase().includes(q) ||
-        String(s.cluster_id).includes(q) ||
-        s.attributes.some((a) => a.toLowerCase().includes(q))
-      );
-    });
-  }, [samples, query, attrFilter]);
 
   const datasetFigures = useMemo(
     () => (analytics?.figures ?? []).filter((f) => f.category === "dataset"),
@@ -229,70 +211,17 @@ export function DatasetAnalyticsPage({ analytics }: DatasetAnalyticsPageProps) {
         </GlassCard>
       )}
 
-      {/* Curated Attribute Sample Explorer */}
+      {/* Google Photos-Inspired Gallery */}
       <GlassCard className="space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <div>
-            <h3 className="text-base font-semibold text-slate-100">
-              Curated Reference Sample Explorer
-            </h3>
-            <p className="text-xs text-slate-400">
-              Showing {filteredSamples.length} of {samples.length} anonymized CelebA validation
-              samples
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Filter attributes..."
-                className="pl-9 pr-3 py-1.5 rounded-lg bg-slate-950 border border-white/15 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-400"
-              />
-            </div>
-
-            {(["all", "smiling", "eyeglasses", "young", "male"] as const).map((tag) => (
-              <button
-                key={tag}
-                type="button"
-                onClick={() => setAttrFilter(tag)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-colors ${
-                  attrFilter === tag
-                    ? "bg-sky-500 text-slate-950"
-                    : "bg-slate-950 text-slate-300 border border-white/10 hover:text-white"
-                }`}
-              >
-                {tag}
-              </button>
-            ))}
-          </div>
+        <div>
+          <h3 className="text-base font-semibold text-slate-100">
+            Google Photos Intelligence Gallery
+          </h3>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Interactive photo management: drag-and-drop local uploads, albums, favorites, search, full-screen zoom lightbox, and batch selection.
+          </p>
         </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
-          {filteredSamples.slice(0, 24).map((sample) => (
-            <div
-              key={sample.id}
-              className="rounded-lg border border-white/10 bg-slate-950/70 overflow-hidden"
-            >
-              <img
-                src={sample.thumbnail}
-                alt={`Reference face ${sample.id}`}
-                referrerPolicy="no-referrer"
-                className="w-full aspect-square object-cover"
-              />
-              <div className="p-2 text-[11px] space-y-0.5">
-                <div className="font-mono text-slate-200 truncate">{sample.filename}</div>
-                <div className="text-slate-400 truncate">
-                  {sample.smiling ? "Smiling" : "Neutral"} ·{" "}
-                  {sample.eyeglasses ? "Glasses" : "No Glasses"}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+        <GooglePhotosGallery samples={samples} />
       </GlassCard>
 
       <FigureLightbox figure={activeFigure} onClose={() => setActiveFigure(null)} />

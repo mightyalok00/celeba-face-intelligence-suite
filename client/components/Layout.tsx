@@ -226,7 +226,7 @@ export function Layout({ activePage, onNavigate, onOpenSearch, children }: Layou
           </div>
         </header>
 
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-[1360px] w-full mx-auto space-y-6">
+        <main key={activePage} className="flex-1 p-4 sm:p-6 lg:p-8 max-w-[1360px] w-full mx-auto space-y-6 animate-fade-in">
           {children}
         </main>
 

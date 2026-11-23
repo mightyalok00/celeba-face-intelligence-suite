@@ -8,6 +8,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { Download, Maximize2 } from "lucide-react";
+import { FigureLightbox, type LightboxFigure } from "../components/FigureLightbox";
 import { GlassCard } from "../components/GlassCard";
 import type { BenchmarkRow, BenchmarkSuitesResponse, DatasetAnalyticsResponse } from "../types";
 
@@ -21,6 +23,7 @@ type SuiteKey = "production" | "latest" | "synthetic";
 export function PerformanceReportsPage({ benchmarks, analytics }: PerformanceReportsPageProps) {
   const [suite, setSuite] = useState<SuiteKey>("production");
   const [selectedModelName, setSelectedModelName] = useState<string>("");
+  const [activeFigure, setActiveFigure] = useState<LightboxFigure | null>(null);
 
   const activeRows: BenchmarkRow[] = useMemo(() => {
     if (!benchmarks) return [];
@@ -72,40 +75,61 @@ export function PerformanceReportsPage({ benchmarks, analytics }: PerformanceRep
           </p>
         </div>
 
-        <div className="inline-flex flex-wrap items-center p-1 rounded-lg bg-slate-900 border border-white/10 shrink-0">
-          <button
-            type="button"
-            onClick={() => setSuite("production")}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-              suite === "production"
-                ? "bg-sky-500 text-slate-950"
-                : "text-slate-300 hover:text-white"
-            }`}
-          >
-            Real-Image Holdout (75)
-          </button>
-          <button
-            type="button"
-            onClick={() => setSuite("latest")}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-              suite === "latest"
-                ? "bg-sky-500 text-slate-950"
-                : "text-slate-300 hover:text-white"
-            }`}
-          >
-            Latest Training Run (30)
-          </button>
-          <button
-            type="button"
-            onClick={() => setSuite("synthetic")}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-              suite === "synthetic"
-                ? "bg-amber-400 text-slate-950"
-                : "text-slate-300 hover:text-white"
-            }`}
-          >
-            Synthetic CI Smoke-Test (30)
-          </button>
+        <div className="flex flex-wrap items-center gap-3 shrink-0">
+          <div className="inline-flex flex-wrap items-center p-1 rounded-lg bg-slate-900 border border-white/10">
+            <button
+              type="button"
+              onClick={() => setSuite("production")}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                suite === "production"
+                  ? "bg-sky-500 text-slate-950"
+                  : "text-slate-300 hover:text-white"
+              }`}
+            >
+              Real-Image Holdout (75)
+            </button>
+            <button
+              type="button"
+              onClick={() => setSuite("latest")}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                suite === "latest"
+                  ? "bg-sky-500 text-slate-950"
+                  : "text-slate-300 hover:text-white"
+              }`}
+            >
+              Latest Training Run (30)
+            </button>
+            <button
+              type="button"
+              onClick={() => setSuite("synthetic")}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                suite === "synthetic"
+                  ? "bg-amber-400 text-slate-950"
+                  : "text-slate-300 hover:text-white"
+              }`}
+            >
+              Synthetic CI Smoke-Test (30)
+            </button>
+          </div>
+
+          <div className="inline-flex items-center gap-2">
+            <a
+              href={`/api/benchmarks/export?suite=${suite}&format=csv`}
+              download={`celeba_${suite}_benchmarks.csv`}
+              className="px-3 py-2 min-h-[36px] rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 text-xs font-medium text-slate-200 inline-flex items-center gap-1.5 whitespace-nowrap"
+            >
+              <Download className="w-3.5 h-3.5 text-sky-400" />
+              <span>Export CSV</span>
+            </a>
+            <a
+              href={`/api/benchmarks/export?suite=${suite}&format=json`}
+              download={`celeba_${suite}_benchmarks.json`}
+              className="px-3 py-2 min-h-[36px] rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 text-xs font-medium text-slate-200 inline-flex items-center gap-1.5 whitespace-nowrap"
+            >
+              <Download className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Export JSON</span>
+            </a>
+          </div>
         </div>
       </div>
 
@@ -310,27 +334,46 @@ export function PerformanceReportsPage({ benchmarks, analytics }: PerformanceRep
       {/* Repository Figures Gallery */}
       {performanceFigures.length > 0 && (
         <GlassCard className="space-y-4">
-          <h3 className="text-base font-semibold text-slate-100">
-            Generated Benchmark & Confusion Matrix Figures (reports/figures/)
-          </h3>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-base font-semibold text-slate-100">
+              Generated Benchmark & Confusion Matrix Figures (reports/figures/)
+            </h3>
+            <span className="text-xs text-slate-400">Click any figure to inspect full size</span>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {performanceFigures.map((fig) => (
-              <div
+              <button
                 key={fig.filename}
-                className="rounded-lg border border-white/10 bg-slate-950/70 overflow-hidden"
+                type="button"
+                onClick={() =>
+                  setActiveFigure({
+                    title: fig.title,
+                    url: fig.url,
+                    filename: fig.filename,
+                    subtitle: `reports/figures/${fig.filename}`,
+                  })
+                }
+                className="group text-left rounded-lg border border-white/10 hover:border-sky-400/50 bg-slate-950/70 overflow-hidden transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
               >
-                <img
-                  src={fig.url}
-                  alt={fig.title}
-                  referrerPolicy="no-referrer"
-                  className="w-full h-48 object-contain bg-white"
-                />
+                <div className="relative">
+                  <img
+                    src={fig.url}
+                    alt={fig.title}
+                    referrerPolicy="no-referrer"
+                    className="w-full h-48 object-contain bg-white"
+                  />
+                  <span className="absolute top-2 right-2 p-1.5 rounded-md bg-slate-900/80 text-slate-200 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Maximize2 className="w-3.5 h-3.5" />
+                  </span>
+                </div>
                 <div className="p-3 text-xs font-medium text-slate-200 truncate">{fig.title}</div>
-              </div>
+              </button>
             ))}
           </div>
         </GlassCard>
       )}
+
+      <FigureLightbox figure={activeFigure} onClose={() => setActiveFigure(null)} />
     </div>
   );
 }

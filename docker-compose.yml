@@ -1,0 +1,86 @@
+services:
+  mysql-celeba:
+    image: mysql:8.0
+    container_name: celeba-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-celeba_db}
+      MYSQL_USER: ${MYSQL_USER:-celeba_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+    ports:
+      - "3306:3306"
+    volumes:
+      - celeba_mysql_data:/var/lib/mysql
+      - ./database/celeba_db_setup.sql:/docker-entrypoint-initdb.d/01_celeba_db_setup.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  ml-inference:
+    image: python:3.11-slim
+    container_name: celeba-ml-inference
+    working_dir: /app
+    restart: unless-stopped
+    volumes:
+      - ./:/app:ro
+    environment:
+      PYTHONUNBUFFERED: "1"
+      MYSQL_HOST: mysql-celeba
+      MYSQL_PORT: "3306"
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-celeba_db}
+      MYSQL_USER: ${MYSQL_USER:-celeba_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    command: >
+      sh -c "pip install --no-cache-dir -r requirements.txt &&
+             uvicorn backend.fastapi_app:app --host 0.0.0.0 --port 8001"
+    ports:
+      - "8001:8001"
+    depends_on:
+      mysql-celeba:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  web-studio:
+    image: node:22-alpine
+    container_name: celeba-web-studio
+    working_dir: /app
+    restart: unless-stopped
+    volumes:
+      - ./:/app
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?Set GEMINI_API_KEY in .env}
+      PYTHON_ML_BACKEND_URL: http://ml-inference:8001
+      MYSQL_HOST: mysql-celeba
+      MYSQL_PORT: "3306"
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-celeba_db}
+      MYSQL_USER: ${MYSQL_USER:-celeba_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    command: >
+      sh -c "npm ci && npm run build && npm run start"
+    ports:
+      - "3000:3000"
+    depends_on:
+      mysql-celeba:
+        condition: service_healthy
+      ml-inference:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  celeba_mysql_data:

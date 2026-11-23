@@ -8,7 +8,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Search } from "lucide-react";
+import { Maximize2, Search } from "lucide-react";
+import { FigureLightbox, type LightboxFigure } from "../components/FigureLightbox";
 import { GlassCard } from "../components/GlassCard";
 import type { DatasetAnalyticsResponse, GallerySample } from "../types";
 
@@ -22,6 +23,7 @@ export function DatasetAnalyticsPage({ analytics }: DatasetAnalyticsPageProps) {
   const [attrFilter, setAttrFilter] = useState<"all" | "smiling" | "eyeglasses" | "young" | "male">(
     "all"
   );
+  const [activeFigure, setActiveFigure] = useState<LightboxFigure | null>(null);
 
   useEffect(() => {
     fetch("/api/gallery")
@@ -188,23 +190,40 @@ export function DatasetAnalyticsPage({ analytics }: DatasetAnalyticsPageProps) {
       {/* Repository Dataset Visual Figures */}
       {datasetFigures.length > 0 && (
         <GlassCard className="space-y-4">
-          <h3 className="text-base font-semibold text-slate-100">
-            Repository Clustering & Demographic Figures
-          </h3>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-base font-semibold text-slate-100">
+              Repository Clustering & Demographic Figures
+            </h3>
+            <span className="text-xs text-slate-400">Click any figure to inspect full size</span>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {datasetFigures.map((fig) => (
-              <div
+              <button
                 key={fig.filename}
-                className="rounded-lg border border-white/10 bg-slate-950/70 overflow-hidden"
+                type="button"
+                onClick={() =>
+                  setActiveFigure({
+                    title: fig.title,
+                    url: fig.url,
+                    filename: fig.filename,
+                    subtitle: `reports/figures/${fig.filename}`,
+                  })
+                }
+                className="group text-left rounded-lg border border-white/10 hover:border-sky-400/50 bg-slate-950/70 overflow-hidden transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
               >
-                <img
-                  src={fig.url}
-                  alt={fig.title}
-                  referrerPolicy="no-referrer"
-                  className="w-full h-52 object-contain bg-white"
-                />
+                <div className="relative">
+                  <img
+                    src={fig.url}
+                    alt={fig.title}
+                    referrerPolicy="no-referrer"
+                    className="w-full h-52 object-contain bg-white"
+                  />
+                  <span className="absolute top-2 right-2 p-1.5 rounded-md bg-slate-900/80 text-slate-200 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Maximize2 className="w-3.5 h-3.5" />
+                  </span>
+                </div>
                 <div className="p-3 text-xs font-medium text-slate-200">{fig.title}</div>
-              </div>
+              </button>
             ))}
           </div>
         </GlassCard>
@@ -275,6 +294,8 @@ export function DatasetAnalyticsPage({ analytics }: DatasetAnalyticsPageProps) {
           ))}
         </div>
       </GlassCard>
+
+      <FigureLightbox figure={activeFigure} onClose={() => setActiveFigure(null)} />
     </div>
   );
 }

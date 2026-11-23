@@ -212,6 +212,30 @@ export interface MlPredictionResult {
   retained_on_disk?: boolean;
 }
 
+export interface MlConsensusModelEntry {
+  architecture: string;
+  probability: number;
+  prediction: number;
+  confidence: number;
+  uncertainty_std: number;
+  slsqp_raw_weight: number;
+  normalized_weight: number;
+  checkpoint_loaded: string;
+}
+
+export interface MlConsensusResult {
+  source: string;
+  use_tta: boolean;
+  weighting_strategy: string;
+  models_evaluated: number;
+  weighted_probability: number;
+  consensus_prediction: number;
+  agreement_ratio: number;
+  per_model: MlConsensusModelEntry[];
+  latency_ms?: number;
+  retained_on_disk?: boolean;
+}
+
 export interface SystemHealthResponse {
   status: "healthy" | "degraded";
   service: string;

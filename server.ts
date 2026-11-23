@@ -1,5 +1,6 @@
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
@@ -606,13 +607,15 @@ async function callGeminiWithFallback<T>(
   runner: (model: string, abortSignal: AbortSignal) => Promise<T>
 ): Promise<{ result: T; modelUsed: string }> {
   const attempts = [
-    { model: DEFAULT_GEMINI_MODEL, timeoutMs: 20_000 },
-    { model: FALLBACK_GEMINI_MODEL, timeoutMs: 35_000 },
+    { model: DEFAULT_GEMINI_MODEL, timeoutMs: 20_000, backoffMs: 500 },
+    { model: FALLBACK_GEMINI_MODEL, timeoutMs: 30_000, backoffMs: 900 },
+    { model: FALLBACK_GEMINI_MODEL, timeoutMs: 35_000, backoffMs: 1400 },
+    { model: DEFAULT_GEMINI_MODEL, timeoutMs: 35_000, backoffMs: 0 },
   ];
   let lastErr: unknown;
 
   for (let i = 0; i < attempts.length; i++) {
-    const { model, timeoutMs } = attempts[i];
+    const { model, timeoutMs, backoffMs } = attempts[i];
     try {
       const result = await runner(model, AbortSignal.timeout(timeoutMs));
       return { result, modelUsed: model };
@@ -621,7 +624,7 @@ async function callGeminiWithFallback<T>(
       if (i === attempts.length - 1 || !isTransientGeminiError(err)) {
         throw err;
       }
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await new Promise((resolve) => setTimeout(resolve, backoffMs));
     }
   }
   throw lastErr;
@@ -677,6 +680,36 @@ Repository Ground Truth:
 const app = express();
 app.disable("x-powered-by");
 app.use(express.json({ limit: "15mb" }));
+
+// Request Correlation ID & Structured API Audit Logging (No Sensitive Payloads)
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const incomingId = req.headers["x-request-id"];
+  const candidate = Array.isArray(incomingId) ? incomingId[0] : incomingId;
+  const requestId =
+    typeof candidate === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(candidate.trim())
+      ? candidate.trim()
+      : crypto.randomUUID();
+
+  res.setHeader("X-Request-Id", requestId);
+
+  if (req.path.startsWith("/api/")) {
+    const startMs = performance.now();
+    res.on("finish", () => {
+      const durationMs = Number((performance.now() - startMs).toFixed(1));
+      console.log(
+        JSON.stringify({
+          ts: new Date().toISOString(),
+          requestId,
+          method: req.method,
+          path: req.path,
+          status: res.statusCode,
+          durationMs,
+        })
+      );
+    });
+  }
+  next();
+});
 
 // CORS & Security Headers
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -738,6 +771,12 @@ const API_DOCS = [
   },
   {
     method: "GET",
+    path: "/api/benchmarks/export",
+    summary: "Downloads allowlisted benchmark suites (production, latest, synthetic) as CSV or JSON attachments.",
+    authOrPolicy: "Read rate limit (120 req/min), strict suite/format allowlist",
+  },
+  {
+    method: "GET",
     path: "/api/models",
     summary: "Returns model registry, checkpoint file inventory, model cards, YAML hyperparameters, and live FastAPI status.",
     authOrPolicy: "Read rate limit (120 req/min)",
@@ -762,6 +801,12 @@ const API_DOCS = [
   },
   {
     method: "POST",
+    path: "/api/ml/consensus",
+    summary: "Executes multi-architecture consensus across verified PyTorch checkpoints via FastAPI backend. Returns 503 if backend is offline.",
+    authOrPolicy: "AI inference rate limit (25 req/min), magic-byte validation, zero disk retention",
+  },
+  {
+    method: "POST",
     path: "/api/gemini/analyze",
     summary: "Executes server-side Gemini multimodal visual attribute & quality analysis without individual identification or sensitive profiling.",
     authOrPolicy: "AI inference rate limit (25 req/min), server-side GEMINI_API_KEY, zero disk retention",
@@ -770,6 +815,12 @@ const API_DOCS = [
     method: "POST",
     path: "/api/gemini/chat",
     summary: "Multi-turn Gemini AI assistant grounded with repository benchmarks, architectures, and fairness reports.",
+    authOrPolicy: "AI inference rate limit (25 req/min), server-side GEMINI_API_KEY",
+  },
+  {
+    method: "POST",
+    path: "/api/gemini/chat/stream",
+    summary: "Streaming Server-Sent Events (SSE) endpoint for real-time token responses from grounded Gemini assistant.",
     authOrPolicy: "AI inference rate limit (25 req/min), server-side GEMINI_API_KEY",
   },
   {
@@ -874,6 +925,126 @@ app.get("/api/benchmarks", apiReadLimiter, (_req: Request, res: Response) => {
       meanAccuracy,
     },
   });
+});
+
+function escapeCsvField(val: unknown): string {
+  const s = val === null || val === undefined ? "" : String(val);
+  if (/[",\r\n]/.test(s)) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+const EXPORT_SUITE_ALLOWLIST = new Set(["production", "latest", "synthetic"]);
+const EXPORT_FORMAT_ALLOWLIST = new Set(["csv", "json"]);
+
+app.get("/api/benchmarks/export", apiReadLimiter, (req: Request, res: Response) => {
+  const rawSuite = typeof req.query.suite === "string" ? req.query.suite.trim().toLowerCase() : "production";
+  const rawFormat = typeof req.query.format === "string" ? req.query.format.trim().toLowerCase() : "csv";
+
+  if (!EXPORT_SUITE_ALLOWLIST.has(rawSuite)) {
+    res.status(400).json({
+      status: "error",
+      error_code: "INVALID_EXPORT_SUITE",
+      message: "Invalid suite parameter. Allowed values: production, latest, synthetic.",
+    });
+    return;
+  }
+
+  if (!EXPORT_FORMAT_ALLOWLIST.has(rawFormat)) {
+    res.status(400).json({
+      status: "error",
+      error_code: "INVALID_EXPORT_FORMAT",
+      message: "Invalid format parameter. Allowed values: csv, json.",
+    });
+    return;
+  }
+
+  let sourceFile = "reports/benchmarks/production_benchmark.csv";
+  let datasetType = "real_image_holdout";
+  let rows: ParsedBenchmarkRow[] = [];
+
+  if (rawSuite === "production") {
+    rows = parseBenchmarkCsv("reports/benchmarks/production_benchmark.csv");
+  } else if (rawSuite === "synthetic") {
+    sourceFile = "reports/benchmarks/ci_smoke_test_benchmark.csv";
+    datasetType = "synthetic_smoke_test";
+    rows = parseBenchmarkCsv("reports/benchmarks/ci_smoke_test_benchmark.csv");
+  } else {
+    sourceFile = "reports/benchmarks/latest_training_run.json";
+    datasetType = "real_image_training_run";
+    const latestRun = readJsonSafe<{ benchmarks?: Array<Record<string, unknown>> }>(
+      "reports/benchmarks/latest_training_run.json",
+      {}
+    );
+    rows = (latestRun.benchmarks ?? []).map((b) => ({
+      model: String(b["Model Configuration"] ?? "Unknown"),
+      strategy: String(b["Strategy"] ?? ""),
+      testLoss: Number(b["Test Loss"] ?? 0),
+      accuracyPct: parseAccuracyPct(b["Accuracy"]),
+      precision: Number(b["Precision"] ?? 0),
+      recall: Number(b["Recall"] ?? 0),
+      f1Score: Number(b["F1-Score"] ?? 0),
+      rocAuc: b["ROC-AUC"] !== undefined ? Number(b["ROC-AUC"]) : null,
+      prAuc: b["PR-AUC"] !== undefined ? Number(b["PR-AUC"]) : null,
+      confusionMatrix: parseConfusionMatrix(
+        b["Confusion Matrix"] !== undefined ? String(b["Confusion Matrix"]) : undefined
+      ),
+    }));
+  }
+
+  const downloadFilename = `celeba_${rawSuite}_benchmarks.${rawFormat}`;
+  res.setHeader("Content-Disposition", `attachment; filename="${downloadFilename}"`);
+
+  if (rawFormat === "json") {
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.send(
+      JSON.stringify(
+        {
+          suite: rawSuite,
+          datasetType,
+          sourceFile,
+          exportedAt: new Date().toISOString(),
+          rowCount: rows.length,
+          rows,
+        },
+        null,
+        2
+      )
+    );
+    return;
+  }
+
+  const csvHeader = [
+    "Model Configuration",
+    "Strategy",
+    "Test Loss",
+    "Accuracy (%)",
+    "Precision",
+    "Recall",
+    "F1-Score",
+    "ROC-AUC",
+    "PR-AUC",
+    "Confusion Matrix",
+  ].join(",");
+
+  const csvLines = rows.map((r) =>
+    [
+      escapeCsvField(r.model),
+      escapeCsvField(r.strategy),
+      escapeCsvField(r.testLoss.toFixed(4)),
+      escapeCsvField(r.accuracyPct.toFixed(2)),
+      escapeCsvField(r.precision.toFixed(4)),
+      escapeCsvField(r.recall.toFixed(4)),
+      escapeCsvField(r.f1Score.toFixed(4)),
+      escapeCsvField(r.rocAuc !== null ? r.rocAuc.toFixed(4) : ""),
+      escapeCsvField(r.prAuc !== null ? r.prAuc.toFixed(4) : ""),
+      escapeCsvField(r.confusionMatrix ? JSON.stringify(r.confusionMatrix) : ""),
+    ].join(",")
+  );
+
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.send([csvHeader, ...csvLines].join("\n"));
 });
 
 app.get("/api/models", apiReadLimiter, async (_req: Request, res: Response) => {
@@ -1138,6 +1309,73 @@ app.post("/api/ml/predict", aiInferenceLimiter, async (req: Request, res: Respon
   }
 });
 
+// Multi-Architecture Consensus Inference Bridge -> Python FastAPI
+// Strictly returns 503 if FastAPI ML backend is unavailable; never fabricates predictions.
+app.post("/api/ml/consensus", aiInferenceLimiter, async (req: Request, res: Response) => {
+  const body = (req.body ?? {}) as {
+    image_base64?: unknown;
+    mime_type?: unknown;
+    use_tta?: unknown;
+  };
+
+  const validated = validateImagePayload(body);
+  if (!validated.ok) {
+    res.status(validated.status).json({
+      status: "error",
+      error_code: "INVALID_IMAGE_UPLOAD",
+      message: validated.message,
+    });
+    return;
+  }
+
+  const useTta = body.use_tta !== false;
+
+  try {
+    const form = new FormData();
+    const uint8 = new Uint8Array(validated.buffer);
+    const blob = new Blob([uint8], { type: validated.mimeType });
+    form.append("file", blob, "upload.jpg");
+    form.append("use_tta", String(useTta));
+
+    const upstream = await fetch(`${PYTHON_ML_BACKEND_URL}/api/predict/consensus`, {
+      method: "POST",
+      body: form,
+      signal: AbortSignal.timeout(25_000),
+    });
+
+    const data = (await upstream.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!upstream.ok) {
+      res.status(upstream.status).json({
+        status: "error",
+        error_code: "ML_INFERENCE_ERROR",
+        message:
+          (typeof data.detail === "string" && data.detail) ||
+          (typeof data.message === "string" && data.message) ||
+          `Python FastAPI consensus endpoint returned HTTP ${upstream.status}.`,
+        backend_url: PYTHON_ML_BACKEND_URL,
+      });
+      return;
+    }
+
+    res.json({
+      status: "success",
+      ...data,
+      retained_on_disk: false,
+    });
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : "Connection refused";
+    res.status(503).json({
+      status: "error",
+      error_code: "ML_BACKEND_UNAVAILABLE",
+      message:
+        `PyTorch/XGBoost FastAPI inference backend is unavailable at ${PYTHON_ML_BACKEND_URL} (${reason}). ` +
+        `Start it with "uvicorn backend.fastapi_app:app --host 0.0.0.0 --port 8001" in a Python environment with requirements.txt installed. ` +
+        `No synthetic consensus predictions were generated.`,
+      backend_url: PYTHON_ML_BACKEND_URL,
+    });
+  }
+});
+
 // Server-Side Gemini Multimodal Face Visual Analysis (Privacy-Hardened)
 app.post("/api/gemini/analyze", aiInferenceLimiter, async (req: Request, res: Response) => {
   const ai = createGeminiClient();
@@ -1342,6 +1580,137 @@ app.post("/api/gemini/chat", aiInferenceLimiter, async (req: Request, res: Respo
       error_code: "GEMINI_UPSTREAM_ERROR",
       message,
     });
+  }
+});
+
+// Server-Side Gemini AI Studio Streaming Chat Assistant (SSE)
+app.post("/api/gemini/chat/stream", aiInferenceLimiter, async (req: Request, res: Response) => {
+  const ai = createGeminiClient();
+  if (!ai) {
+    res.status(503).json({
+      status: "error",
+      error_code: "GEMINI_NOT_CONFIGURED",
+      message: "GEMINI_API_KEY is not configured in the server environment.",
+    });
+    return;
+  }
+
+  const body = (req.body ?? {}) as {
+    messages?: Array<{ role?: string; text?: string }>;
+  };
+
+  if (!Array.isArray(body.messages) || body.messages.length === 0) {
+    res.status(400).json({
+      status: "error",
+      message: "Provide a non-empty messages array.",
+    });
+    return;
+  }
+
+  const sanitizedHistory = body.messages
+    .slice(-14)
+    .filter((m) => typeof m.text === "string" && m.text.trim().length > 0)
+    .map((m) => ({
+      role: m.role === "model" ? "model" : "user",
+      parts: [{ text: String(m.text).trim().slice(0, 4000) }],
+    }));
+
+  if (sanitizedHistory.length === 0) {
+    res.status(400).json({
+      status: "error",
+      message: "No valid message content provided.",
+    });
+    return;
+  }
+
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders?.();
+
+  let clientClosed = false;
+  const clientAbortController = new AbortController();
+  res.on("close", () => {
+    if (!res.writableEnded) {
+      clientClosed = true;
+      clientAbortController.abort();
+    }
+  });
+
+  const sendSse = (payload: Record<string, unknown>) => {
+    if (clientClosed || res.writableEnded) return;
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
+
+  const attempts = [
+    { model: DEFAULT_GEMINI_MODEL, timeoutMs: 22_000, backoffMs: 500 },
+    { model: FALLBACK_GEMINI_MODEL, timeoutMs: 30_000, backoffMs: 900 },
+    { model: FALLBACK_GEMINI_MODEL, timeoutMs: 35_000, backoffMs: 1400 },
+    { model: DEFAULT_GEMINI_MODEL, timeoutMs: 35_000, backoffMs: 0 },
+  ];
+
+  const systemInstruction = buildChatSystemInstruction();
+  let streamSucceeded = false;
+  let lastErrorMessage = "Gemini streaming request failed.";
+
+  for (let i = 0; i < attempts.length; i++) {
+    if (clientClosed) break;
+    const { model, timeoutMs, backoffMs } = attempts[i];
+    const combinedSignal = AbortSignal.any([
+      clientAbortController.signal,
+      AbortSignal.timeout(timeoutMs),
+    ]);
+
+    let emittedAnyChunk = false;
+    try {
+      const stream = await ai.models.generateContentStream({
+        model,
+        contents: sanitizedHistory,
+        config: {
+          abortSignal: combinedSignal,
+          systemInstruction,
+          thinkingConfig: {
+            thinkingLevel:
+              model === FALLBACK_GEMINI_MODEL ? ThinkingLevel.MINIMAL : ThinkingLevel.LOW,
+          },
+        },
+      });
+
+      sendSse({ type: "meta", model });
+
+      for await (const chunk of stream) {
+        if (clientClosed) break;
+        const text = chunk.text ?? "";
+        if (text.length > 0) {
+          emittedAnyChunk = true;
+          sendSse({ type: "delta", text });
+        }
+      }
+
+      if (!clientClosed) {
+        sendSse({ type: "done", model });
+      }
+      streamSucceeded = true;
+      break;
+    } catch (err) {
+      if (clientClosed) break;
+      lastErrorMessage = err instanceof Error ? err.message : "Gemini streaming failed";
+      const canRetry = !emittedAnyChunk && i < attempts.length - 1 && isTransientGeminiError(err);
+      if (!canRetry) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, backoffMs));
+    }
+  }
+
+  if (!streamSucceeded && !clientClosed) {
+    console.error("[Gemini /api/gemini/chat/stream] Error:", lastErrorMessage);
+    sendSse({ type: "error", message: lastErrorMessage });
+  }
+
+  if (!res.writableEnded) {
+    res.end();
   }
 });
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { CommandPalette } from "./components/CommandPalette";
 import { Layout } from "./components/Layout";
 import { AiChatPage } from "./pages/AiChatPage";
 import { CameraAnalysisPage } from "./pages/CameraAnalysisPage";
@@ -16,14 +17,69 @@ import type {
   SystemHealthResponse,
 } from "./types";
 
+const PAGE_TO_PATH: Record<PageId, string> = {
+  dashboard: "/",
+  "image-analysis": "/analyze",
+  "camera-analysis": "/camera",
+  "model-comparison": "/models",
+  "dataset-analytics": "/dataset",
+  "performance-reports": "/reports",
+  "ai-chat": "/assistant",
+  "system-health": "/system",
+};
+
+const PATH_TO_PAGE: Record<string, PageId> = {
+  "/": "dashboard",
+  "/analyze": "image-analysis",
+  "/camera": "camera-analysis",
+  "/models": "model-comparison",
+  "/dataset": "dataset-analytics",
+  "/reports": "performance-reports",
+  "/assistant": "ai-chat",
+  "/system": "system-health",
+};
+
+function resolveInitialPage(): PageId {
+  const normalized = window.location.pathname.replace(/\/+$/, "") || "/";
+  return PATH_TO_PAGE[normalized] ?? "dashboard";
+}
+
 export default function App() {
-  const [activePage, setActivePage] = useState<PageId>("dashboard");
+  const [activePage, setActivePage] = useState<PageId>(() => resolveInitialPage());
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [benchmarks, setBenchmarks] = useState<BenchmarkSuitesResponse | null>(null);
   const [models, setModels] = useState<ModelsResponse | null>(null);
   const [analytics, setAnalytics] = useState<DatasetAnalyticsResponse | null>(null);
   const [health, setHealth] = useState<SystemHealthResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const navigateTo = useCallback((page: PageId) => {
+    setActivePage(page);
+    const targetPath = PAGE_TO_PATH[page] ?? "/";
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState({ page }, "", targetPath);
+    }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
+
+  useEffect(() => {
+    const onPopState = () => {
+      setActivePage(resolveInitialPage());
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("popstate", onPopState);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("popstate", onPopState);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, []);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -63,30 +119,44 @@ export default function App() {
   }, [loadAll]);
 
   return (
-    <Layout activePage={activePage} onNavigate={setActivePage}>
-      {activePage === "dashboard" && (
-        <DashboardPage
-          benchmarks={benchmarks}
-          analytics={analytics}
-          health={health}
-          loading={loading}
-          error={error}
-          onNavigate={setActivePage}
-        />
-      )}
-      {activePage === "image-analysis" && <ImageAnalysisPage />}
-      {activePage === "camera-analysis" && <CameraAnalysisPage />}
-      {activePage === "model-comparison" && (
-        <ModelComparisonPage benchmarks={benchmarks} models={models} />
-      )}
-      {activePage === "dataset-analytics" && <DatasetAnalyticsPage analytics={analytics} />}
-      {activePage === "performance-reports" && (
-        <PerformanceReportsPage benchmarks={benchmarks} analytics={analytics} />
-      )}
-      {activePage === "ai-chat" && <AiChatPage />}
-      {activePage === "system-health" && (
-        <SystemHealthPage health={health} onRefresh={() => void loadAll()} />
-      )}
-    </Layout>
+    <>
+      <Layout
+        activePage={activePage}
+        onNavigate={navigateTo}
+        onOpenSearch={() => setPaletteOpen(true)}
+      >
+        {activePage === "dashboard" && (
+          <DashboardPage
+            benchmarks={benchmarks}
+            analytics={analytics}
+            health={health}
+            loading={loading}
+            error={error}
+            onNavigate={navigateTo}
+          />
+        )}
+        {activePage === "image-analysis" && <ImageAnalysisPage />}
+        {activePage === "camera-analysis" && <CameraAnalysisPage />}
+        {activePage === "model-comparison" && (
+          <ModelComparisonPage benchmarks={benchmarks} models={models} />
+        )}
+        {activePage === "dataset-analytics" && <DatasetAnalyticsPage analytics={analytics} />}
+        {activePage === "performance-reports" && (
+          <PerformanceReportsPage benchmarks={benchmarks} analytics={analytics} />
+        )}
+        {activePage === "ai-chat" && <AiChatPage />}
+        {activePage === "system-health" && (
+          <SystemHealthPage health={health} onRefresh={() => void loadAll()} />
+        )}
+      </Layout>
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onNavigate={navigateTo}
+        benchmarks={benchmarks}
+        analytics={analytics}
+      />
+    </>
   );
 }

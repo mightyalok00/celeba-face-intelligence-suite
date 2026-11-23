@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import { ArrowRight, CheckCircle2, AlertTriangle } from "lucide-react";
 import { GlassCard } from "../components/GlassCard";
+import { HeroShowcaseSlider } from "../components/HeroShowcaseSlider";
 import type {
   BenchmarkSuitesResponse,
   DatasetAnalyticsResponse,
@@ -38,13 +39,16 @@ export function DashboardPage({
   onNavigate,
 }: DashboardPageProps) {
   const [chartSuite, setChartSuite] = useState<"real" | "synthetic">("real");
+  const [minAccuracyFilter, setMinAccuracyFilter] = useState<number>(40);
 
   const activeRows = useMemo(() => {
     if (!benchmarks) return [];
-    return chartSuite === "real"
-      ? benchmarks.realImageProduction.rows
-      : benchmarks.ciSmokeTestSynthetic.rows;
-  }, [benchmarks, chartSuite]);
+    const base =
+      chartSuite === "real"
+        ? benchmarks.realImageProduction.rows
+        : benchmarks.ciSmokeTestSynthetic.rows;
+    return base.filter((r) => r.accuracyPct >= minAccuracyFilter);
+  }, [benchmarks, chartSuite, minAccuracyFilter]);
 
   const chartData = useMemo(
     () =>
@@ -73,6 +77,11 @@ export function DashboardPage({
   const topRealModel = useMemo(() => {
     const rows = benchmarks?.realImageProduction.rows ?? [];
     return [...rows].sort((a, b) => (b.rocAuc ?? 0) - (a.rocAuc ?? 0))[0] ?? null;
+  }, [benchmarks]);
+
+  const topAccuracyRow = useMemo(() => {
+    const rows = benchmarks?.realImageProduction.rows ?? [];
+    return [...rows].sort((a, b) => b.accuracyPct - a.accuracyPct)[0] ?? null;
   }, [benchmarks]);
 
   const weightColors = ["#38BDF8", "#818CF8", "#34D399"];
@@ -108,6 +117,16 @@ export function DashboardPage({
 
   return (
     <div className="space-y-6">
+      {/* Interactive Showcase Slide Carousel */}
+      <HeroShowcaseSlider
+        totalImages={analytics?.manifest.total_images ?? 202599}
+        uniqueIdentities={analytics?.manifest.total_unique_identities ?? 10177}
+        topAccuracyPct={topAccuracyRow ? `${topAccuracyRow.accuracyPct.toFixed(2)}%` : "82.67%"}
+        topRocAuc={topRealModel?.rocAuc ? topRealModel.rocAuc.toFixed(4) : "0.9104"}
+        identityLeakageCount={analytics?.splitManifestSummary.identityOverlapCount ?? 0}
+        onNavigate={onNavigate}
+      />
+
       {/* Hero Summary Row */}
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
         <div>
@@ -228,33 +247,75 @@ export function DashboardPage({
             </div>
           </div>
 
-          <div className="h-80 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 8, right: 12, left: -12, bottom: 40 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.12)" />
-                <XAxis
-                  dataKey="name"
-                  tick={{ fill: "#94A3B8", fontSize: 11 }}
-                  interval={0}
-                  angle={-24}
-                  textAnchor="end"
-                  height={65}
-                />
-                <YAxis tick={{ fill: "#94A3B8", fontSize: 11 }} domain={[0, 100]} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "#0F172A",
-                    borderColor: "rgba(255,255,255,0.12)",
-                    borderRadius: "8px",
-                    color: "#F8FAFC",
-                    fontSize: "12px",
-                  }}
-                />
-                <Bar dataKey="accuracy" name="Accuracy (%)" fill="#38BDF8" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="rocAuc" name="ROC-AUC (x100)" fill="#818CF8" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-white/10 bg-slate-950/60 px-3.5 py-2.5">
+            <label
+              htmlFor="minAccuracySlider"
+              className="text-xs font-medium text-slate-300 flex items-center gap-2 whitespace-nowrap"
+            >
+              <span>Minimum Accuracy Threshold:</span>
+              <span className="font-mono font-semibold text-sky-300 tabular-nums">
+                {minAccuracyFilter}%
+              </span>
+            </label>
+            <div className="flex items-center gap-3 flex-1 max-w-xs">
+              <input
+                id="minAccuracySlider"
+                type="range"
+                min={40}
+                max={85}
+                step={5}
+                value={minAccuracyFilter}
+                onChange={(e) => setMinAccuracyFilter(Number(e.target.value))}
+                className="w-full accent-sky-400 cursor-pointer"
+              />
+              <span className="text-xs text-slate-400 font-mono tabular-nums whitespace-nowrap">
+                {chartData.length} shown
+              </span>
+            </div>
           </div>
+
+          {chartData.length > 0 ? (
+            <div className="h-80 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} margin={{ top: 8, right: 12, left: -12, bottom: 40 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.12)" />
+                  <XAxis
+                    dataKey="name"
+                    tick={{ fill: "#94A3B8", fontSize: 11 }}
+                    interval={0}
+                    angle={-24}
+                    textAnchor="end"
+                    height={65}
+                  />
+                  <YAxis tick={{ fill: "#94A3B8", fontSize: 11 }} domain={[0, 100]} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "#0F172A",
+                      borderColor: "rgba(255,255,255,0.12)",
+                      borderRadius: "8px",
+                      color: "#F8FAFC",
+                      fontSize: "12px",
+                    }}
+                  />
+                  <Bar dataKey="accuracy" name="Accuracy (%)" fill="#38BDF8" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="rocAuc" name="ROC-AUC (x100)" fill="#818CF8" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="h-80 flex flex-col items-center justify-center gap-3 text-center rounded-lg border border-white/10 bg-slate-950/40 p-6">
+              <p className="text-sm text-slate-300">
+                No models in this benchmark suite meet the {minAccuracyFilter}% accuracy cutoff.
+              </p>
+              <button
+                type="button"
+                onClick={() => setMinAccuracyFilter(40)}
+                className="px-3 py-1.5 rounded-md bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-semibold transition-colors"
+              >
+                Reset Slider to 40%
+              </button>
+            </div>
+          )}
         </GlassCard>
 
         <GlassCard className="flex flex-col justify-between">

@@ -14,7 +14,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { CheckCircle2, FileCode2, XCircle } from "lucide-react";
+import { CheckCircle2, FileCode2, RotateCcw, SlidersHorizontal, XCircle } from "lucide-react";
 import { GlassCard } from "../components/GlassCard";
 import type { BenchmarkSuitesResponse, ModelsResponse } from "../types";
 
@@ -23,9 +23,52 @@ interface ModelComparisonPageProps {
   models: ModelsResponse | null;
 }
 
+const DEFAULT_SLSQP_WEIGHTS = {
+  xgb: 0.3457,
+  cnn: 0.3959,
+  vit: 0.2584,
+};
+
 export function ModelComparisonPage({ benchmarks, models }: ModelComparisonPageProps) {
   const [suite, setSuite] = useState<"real" | "synthetic">("real");
   const [selectedCardId, setSelectedCardId] = useState<string>("ensemble");
+  const [weightXgb, setWeightXgb] = useState<number>(Math.round(DEFAULT_SLSQP_WEIGHTS.xgb * 100));
+  const [weightCnn, setWeightCnn] = useState<number>(Math.round(DEFAULT_SLSQP_WEIGHTS.cnn * 100));
+  const [weightVit, setWeightVit] = useState<number>(Math.round(DEFAULT_SLSQP_WEIGHTS.vit * 100));
+
+  const verifiedWeights = useMemo(() => {
+    const raw = benchmarks?.latestTrainingRun.optimalEnsembleWeights ?? {};
+    const findWeight = (needle: string, fallback: number) => {
+      for (const [k, v] of Object.entries(raw)) {
+        if (k.toLowerCase().includes(needle) && typeof v === "number") return v;
+      }
+      return fallback;
+    };
+    return {
+      xgb: findWeight("xgb", DEFAULT_SLSQP_WEIGHTS.xgb),
+      cnn: findWeight("cnn", DEFAULT_SLSQP_WEIGHTS.cnn),
+      vit: findWeight("vit", DEFAULT_SLSQP_WEIGHTS.vit),
+    };
+  }, [benchmarks]);
+
+  const normalizedBlend = useMemo(() => {
+    const total = weightXgb + weightCnn + weightVit;
+    if (total <= 0) {
+      return { xgb: 33.3, cnn: 33.3, vit: 33.4, total: 0 };
+    }
+    return {
+      xgb: Number(((weightXgb / total) * 100).toFixed(1)),
+      cnn: Number(((weightCnn / total) * 100).toFixed(1)),
+      vit: Number(((weightVit / total) * 100).toFixed(1)),
+      total,
+    };
+  }, [weightXgb, weightCnn, weightVit]);
+
+  const resetWeightsToVerified = () => {
+    setWeightXgb(Math.round(verifiedWeights.xgb * 100));
+    setWeightCnn(Math.round(verifiedWeights.cnn * 100));
+    setWeightVit(Math.round(verifiedWeights.vit * 100));
+  };
 
   const rows = useMemo(() => {
     if (!benchmarks) return [];
@@ -207,6 +250,128 @@ export function ModelComparisonPage({ benchmarks, models }: ModelComparisonPageP
           </div>
         </GlassCard>
       </div>
+
+      {/* Interactive SLSQP Ensemble Weight Simulator */}
+      <GlassCard className="space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h3 className="text-base font-semibold text-slate-100 inline-flex items-center gap-2">
+              <SlidersHorizontal className="w-4 h-4 text-sky-400" />
+              SLSQP Ensemble Weight Allocation Explorer
+            </h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Adjust relative blend weights across the three base architectures. Verified SLSQP
+              weights in <span className="font-mono">latest_training_run.json</span>:{" "}
+              <span className="font-mono text-slate-200 tabular-nums">
+                XGB {(verifiedWeights.xgb * 100).toFixed(2)}% · CNN {(verifiedWeights.cnn * 100).toFixed(2)}% · ViT {(verifiedWeights.vit * 100).toFixed(2)}%
+              </span>
+              .
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={resetWeightsToVerified}
+            className="px-3 py-1.5 min-h-[36px] rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 text-xs font-medium text-slate-200 inline-flex items-center gap-1.5 self-start whitespace-nowrap"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Reset to Verified SLSQP</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="p-3.5 rounded-lg bg-slate-950/60 border border-white/10 space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <label htmlFor="weightXgbSlider" className="font-medium text-emerald-300">
+                5-Fold Bagged XGBoost
+              </label>
+              <span className="font-mono font-semibold text-slate-100 tabular-nums">
+                {normalizedBlend.xgb}%
+              </span>
+            </div>
+            <input
+              id="weightXgbSlider"
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={weightXgb}
+              onChange={(e) => setWeightXgb(Number(e.target.value))}
+              className="w-full accent-emerald-400 cursor-pointer"
+            />
+          </div>
+
+          <div className="p-3.5 rounded-lg bg-slate-950/60 border border-white/10 space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <label htmlFor="weightCnnSlider" className="font-medium text-indigo-300">
+                Residual CNN
+              </label>
+              <span className="font-mono font-semibold text-slate-100 tabular-nums">
+                {normalizedBlend.cnn}%
+              </span>
+            </div>
+            <input
+              id="weightCnnSlider"
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={weightCnn}
+              onChange={(e) => setWeightCnn(Number(e.target.value))}
+              className="w-full accent-indigo-400 cursor-pointer"
+            />
+          </div>
+
+          <div className="p-3.5 rounded-lg bg-slate-950/60 border border-white/10 space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <label htmlFor="weightVitSlider" className="font-medium text-amber-300">
+                Vision Transformer (ViT)
+              </label>
+              <span className="font-mono font-semibold text-slate-100 tabular-nums">
+                {normalizedBlend.vit}%
+              </span>
+            </div>
+            <input
+              id="weightVitSlider"
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={weightVit}
+              onChange={(e) => setWeightVit(Number(e.target.value))}
+              className="w-full accent-amber-400 cursor-pointer"
+            />
+          </div>
+        </div>
+
+        {/* Normalized Allocation Proportion Bar */}
+        <div className="space-y-1.5">
+          <div className="h-3 w-full rounded-full overflow-hidden bg-slate-950 border border-white/10 flex">
+            <div
+              style={{ width: `${normalizedBlend.xgb}%` }}
+              className="bg-emerald-400 transition-all duration-200"
+              title={`XGBoost: ${normalizedBlend.xgb}%`}
+            />
+            <div
+              style={{ width: `${normalizedBlend.cnn}%` }}
+              className="bg-indigo-400 transition-all duration-200"
+              title={`Residual CNN: ${normalizedBlend.cnn}%`}
+            />
+            <div
+              style={{ width: `${normalizedBlend.vit}%` }}
+              className="bg-amber-400 transition-all duration-200"
+              title={`Vision Transformer: ${normalizedBlend.vit}%`}
+            />
+          </div>
+          <div className="text-[11px] text-slate-400 flex flex-wrap items-center justify-between gap-2">
+            <span>
+              Sum-to-1 simplex normalization across base estimators (out-of-fold calibration requires
+              running the FastAPI / offline training evaluator).
+            </span>
+            <span className="font-mono text-slate-300 tabular-nums">Total: 100.0%</span>
+          </div>
+        </div>
+      </GlassCard>
 
       {/* Checkpoint Inventory + Model Registry */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

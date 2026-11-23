@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="200" viewBox="0 0 1600 200" role="img" aria-label="CelebA Face Intelligence Suite Footer Banner">
+  <defs>
+    <linearGradient id="footerBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FCFDFE" />
+      <stop offset="50%" stop-color="#F6F8FB" />
+      <stop offset="100%" stop-color="#EDF2F8" />
+    </linearGradient>
+    <linearGradient id="footerNavyBar" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0F2744" />
+      <stop offset="60%" stop-color="#1E4976" />
+      <stop offset="100%" stop-color="#4A749F" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1600" height="200" fill="url(#footerBg)" />
+  <rect x="20" y="16" width="1560" height="168" rx="12" fill="none" stroke="#CBD5E1" stroke-width="1" />
+
+  <!-- Subtle Left Geometric Facial Mesh Signature Motif -->
+  <g transform="translate(88, 44)" stroke="#1E3A5F" stroke-opacity="0.32" stroke-width="1.2" fill="none">
+    <path d="M 56 8 C 84 8, 102 28, 104 56 C 106 84, 84 106, 56 112 C 28 106, 6 84, 8 56 C 10 28, 28 8, 56 8 Z" />
+    <polyline points="26,44 56,34 86,44" />
+    <polyline points="26,44 46,68 56,74 66,68 86,44" />
+    <polyline points="34,82 56,88 78,82 56,112 34,82" />
+    <circle cx="38" cy="48" r="2.2" fill="#1E3A5F" fill-opacity="0.6" stroke="none" />
+    <circle cx="74" cy="48" r="2.2" fill="#1E3A5F" fill-opacity="0.6" stroke="none" />
+    <circle cx="56" cy="74" r="2.2" fill="#1E3A5F" fill-opacity="0.6" stroke="none" />
+  </g>
+
+  <!-- Subtle Right Neural Node Pattern -->
+  <g transform="translate(1360, 46)" stroke="#6488B2" stroke-opacity="0.32" stroke-width="1.1" fill="none">
+    <line x1="18" y1="22" x2="78" y2="54" />
+    <line x1="18" y1="86" x2="78" y2="54" />
+    <line x1="18" y1="22" x2="78" y2="18" />
+    <line x1="18" y1="86" x2="78" y2="90" />
+    <line x1="78" y1="18" x2="138" y2="54" />
+    <line x1="78" y1="54" x2="138" y2="54" />
+    <line x1="78" y1="90" x2="138" y2="54" />
+    <circle cx="18" cy="22" r="4" fill="#F8FAFC" stroke="#1E3A5F" stroke-opacity="0.45" />
+    <circle cx="18" cy="86" r="4" fill="#F8FAFC" stroke="#1E3A5F" stroke-opacity="0.45" />
+    <circle cx="78" cy="18" r="4" fill="#F8FAFC" stroke="#1E3A5F" stroke-opacity="0.45" />
+    <circle cx="78" cy="54" r="4.5" fill="#1E3A5F" fill-opacity="0.55" stroke="none" />
+    <circle cx="78" cy="90" r="4" fill="#F8FAFC" stroke="#1E3A5F" stroke-opacity="0.45" />
+    <circle cx="138" cy="54" r="4.5" fill="#F8FAFC" stroke="#1E3A5F" stroke-opacity="0.55" />
+  </g>
+
+  <!-- Centered Coordinated Typography -->
+  <g text-anchor="middle" font-family="Inter, 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif">
+    <rect x="760" y="40" width="80" height="3" rx="1.5" fill="url(#footerNavyBar)" />
+
+    <text x="800" y="84" font-size="28" font-weight="700" letter-spacing="-0.4" fill="#0F223D">
+      Turning Visual Data into Intelligent Insights
+    </text>
+
+    <text x="800" y="118" font-size="16" font-weight="500" letter-spacing="0.8" fill="#334155">
+      Machine Learning  •  Deep Learning  •  Generative AI
+    </text>
+
+    <text x="800" y="156" font-size="14" font-weight="600" letter-spacing="0.4" fill="#1E3A5F">
+      Developed by Alok Agarwal
+    </text>
+  </g>
+</svg>

@@ -1,0 +1,167 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="400" viewBox="0 0 1600 400" role="img" aria-label="CelebA Face Intelligence Suite Header Banner">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FCFDFE" />
+      <stop offset="55%" stop-color="#F6F8FB" />
+      <stop offset="100%" stop-color="#ECF1F8" />
+    </linearGradient>
+    <radialGradient id="softHalo" cx="78%" cy="50%" r="36%">
+      <stop offset="0%" stop-color="#DCE7F5" stop-opacity="0.7" />
+      <stop offset="100%" stop-color="#F6F8FB" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="navyAccent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0F2744" />
+      <stop offset="65%" stop-color="#1E4976" />
+      <stop offset="100%" stop-color="#3B6E9C" />
+    </linearGradient>
+    <linearGradient id="meshStroke" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#163558" stop-opacity="0.82" />
+      <stop offset="100%" stop-color="#4A749F" stop-opacity="0.45" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background Canvas -->
+  <rect width="1600" height="400" fill="url(#bgGrad)" />
+  <rect width="1600" height="400" fill="url(#softHalo)" />
+
+  <!-- Subtle Hairline Perimeter Frame -->
+  <rect x="20" y="20" width="1560" height="360" rx="14" fill="none" stroke="#CBD5E1" stroke-width="1" />
+
+  <!-- Subtle Architectural Coordinate Grid (Right Side Backdrop) -->
+  <g stroke="#CBD5E1" stroke-opacity="0.35" stroke-width="1">
+    <line x1="980" y1="48" x2="980" y2="352" />
+    <line x1="1120" y1="48" x2="1120" y2="352" />
+    <line x1="1260" y1="48" x2="1260" y2="352" />
+    <line x1="1400" y1="48" x2="1400" y2="352" />
+    <line x1="920" y1="100" x2="1520" y2="100" />
+    <line x1="920" y1="200" x2="1520" y2="200" />
+    <line x1="920" y1="300" x2="1520" y2="300" />
+  </g>
+
+  <!-- Left Editorial Typography Block -->
+  <g font-family="Inter, 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif">
+    <!-- Kicker Rule -->
+    <rect x="96" y="88" width="52" height="3.5" rx="1.75" fill="url(#navyAccent)" />
+    <text x="164" y="94" font-size="13" font-weight="600" letter-spacing="2.6" fill="#475569">
+      COMPUTER VISION &amp; ATTRIBUTE INTELLIGENCE
+    </text>
+
+    <!-- Primary Title -->
+    <text x="96" y="160" font-size="48" font-weight="700" letter-spacing="-0.8" fill="#0F223D">
+      CelebA Face Intelligence Suite
+    </text>
+
+    <!-- Subtitle -->
+    <text x="96" y="206" font-size="21" font-weight="400" fill="#334155">
+      Facial Attribute Analysis Powered by Machine Learning &amp; Deep Learning
+    </text>
+
+    <!-- Subtle Divider -->
+    <line x1="96" y1="246" x2="880" y2="246" stroke="#CBD5E1" stroke-width="1" />
+
+    <!-- Technology Stack -->
+    <text x="96" y="280" font-size="12" font-weight="600" letter-spacing="1.8" fill="#64748B">
+      TECHNOLOGY STACK
+    </text>
+    <text x="96" y="310" font-size="16" font-weight="600" fill="#1E3A5F">
+      Python  ·  PyTorch  ·  CNN  ·  ANN  ·  BiLSTM  ·  Vision Transformer  ·  XGBoost  ·  Gemini AI  ·  MySQL
+    </text>
+  </g>
+
+  <!-- Right Realistic Geometric Facial Wireframe + Neural Network Connections -->
+  <g transform="translate(1030, 38)">
+    <!-- Subtle Neural Network Layer Nodes (Left to Right into Landmark Graph) -->
+    <g stroke="#6488B2" stroke-opacity="0.35" stroke-width="1.2" fill="none">
+      <!-- Input Feature Layer to Facial Anchor Nodes -->
+      <line x1="20" y1="74" x2="165" y2="108" />
+      <line x1="20" y1="74" x2="180" y2="144" />
+      <line x1="20" y1="162" x2="165" y2="108" />
+      <line x1="20" y1="162" x2="155" y2="176" />
+      <line x1="20" y1="162" x2="186" y2="224" />
+      <line x1="20" y1="250" x2="186" y2="224" />
+      <line x1="20" y1="250" x2="220" y2="288" />
+      <!-- Facial Anchor Nodes to Right Representation Vector -->
+      <line x1="315" y1="108" x2="452" y2="94" />
+      <line x1="300" y1="144" x2="452" y2="94" />
+      <line x1="300" y1="144" x2="452" y2="162" />
+      <line x1="322" y1="176" x2="452" y2="162" />
+      <line x1="294" y1="224" x2="452" y2="230" />
+      <line x1="260" y1="288" x2="452" y2="230" />
+    </g>
+
+    <!-- Neural Hidden / Output Nodes -->
+    <g>
+      <circle cx="20" cy="74" r="5" fill="#F8FAFC" stroke="#1E3A5F" stroke-width="1.6" />
+      <circle cx="20" cy="162" r="5" fill="#F8FAFC" stroke="#1E3A5F" stroke-width="1.6" />
+      <circle cx="20" cy="250" r="5" fill="#F8FAFC" stroke="#1E3A5F" stroke-width="1.6" />
+
+      <circle cx="452" cy="94" r="5" fill="#F8FAFC" stroke="#1E3A5F" stroke-width="1.6" />
+      <circle cx="452" cy="162" r="5" fill="#1E3A5F" />
+      <circle cx="452" cy="230" r="5" fill="#F8FAFC" stroke="#1E3A5F" stroke-width="1.6" />
+    </g>
+
+    <!-- Head & Facial Contour Wireframe (Anatomical Symmetry Around x=240) -->
+    <g stroke="url(#meshStroke)" stroke-width="1.4" fill="none" stroke-linejoin="round" stroke-linecap="round">
+      <!-- Cranial Crown & Outer Jaw Contour -->
+      <path d="M 240 28 C 292 28, 336 62, 344 116 C 350 162, 344 206, 326 244 C 306 286, 274 306, 240 310 C 206 306, 174 286, 154 244 C 136 206, 130 162, 136 116 C 144 62, 188 28, 240 28 Z" stroke-width="1.8" />
+
+      <!-- Internal Forehead & Cheekbone Triangulation -->
+      <polyline points="154,108 192,84 240,66 288,84 326,108" />
+      <polyline points="192,84 182,126 240,126 298,126 288,84" />
+      <polyline points="240,28 240,66 240,126 240,190 240,224 240,276 240,310" stroke-opacity="0.55" />
+
+      <!-- Brow Arches -->
+      <path d="M 164 120 Q 190 108 218 118" stroke-width="1.6" />
+      <path d="M 316 120 Q 290 108 262 118" stroke-width="1.6" />
+
+      <!-- Orbital Eye Contours -->
+      <path d="M 168 144 Q 194 131 218 144 Q 194 156 168 144 Z" stroke-width="1.5" />
+      <path d="M 312 144 Q 286 131 262 144 Q 286 156 312 144 Z" stroke-width="1.5" />
+      <circle cx="193" cy="144" r="5" stroke-width="1.3" />
+      <circle cx="287" cy="144" r="5" stroke-width="1.3" />
+
+      <!-- Nose Bridge & Alar Triangle -->
+      <polyline points="218,144 240,138 262,144" />
+      <polyline points="240,126 226,188 240,196 254,188 240,126" />
+      <polyline points="218,144 226,188 186,178 193,144" />
+      <polyline points="262,144 254,188 294,178 287,144" />
+
+      <!-- Cheekbone & Zygomatic Mesh -->
+      <polyline points="136,116 168,144 155,176 186,178 186,224 154,244" />
+      <polyline points="344,116 312,144 325,176 294,178 294,224 326,244" />
+
+      <!-- Mouth / Smile Landmark Mesh -->
+      <path d="M 198 228 Q 220 218 240 223 Q 260 218 282 228 Q 240 248 198 228 Z" stroke-width="1.6" />
+      <line x1="198" y1="228" x2="282" y2="228" stroke-opacity="0.65" />
+
+      <!-- Lower Jaw & Chin Triangulation -->
+      <polyline points="186,224 198,228 214,274 240,282 266,274 282,228 294,224" />
+      <polyline points="154,244 214,274 240,310 266,274 326,244" />
+      <polyline points="226,188 198,228" stroke-opacity="0.55" />
+      <polyline points="254,188 282,228" stroke-opacity="0.55" />
+    </g>
+
+    <!-- Landmark Vertices -->
+    <g fill="#0F2744">
+      <circle cx="240" cy="66" r="2.6" />
+      <circle cx="192" cy="84" r="2.4" />
+      <circle cx="288" cy="84" r="2.4" />
+      <circle cx="165" cy="108" r="2.8" />
+      <circle cx="315" cy="108" r="2.8" />
+      <circle cx="193" cy="144" r="2.6" />
+      <circle cx="287" cy="144" r="2.6" />
+      <circle cx="240" cy="138" r="2.4" />
+      <circle cx="155" cy="176" r="2.6" />
+      <circle cx="325" cy="176" r="2.6" />
+      <circle cx="226" cy="188" r="2.4" />
+      <circle cx="254" cy="188" r="2.4" />
+      <circle cx="240" cy="196" r="2.8" />
+      <circle cx="198" cy="228" r="2.8" />
+      <circle cx="282" cy="228" r="2.8" />
+      <circle cx="240" cy="223" r="2.5" />
+      <circle cx="214" cy="274" r="2.4" />
+      <circle cx="266" cy="274" r="2.4" />
+      <circle cx="240" cy="310" r="2.8" />
+    </g>
+  </g>
+</svg>

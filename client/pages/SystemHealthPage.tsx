@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, RefreshCw, ShieldCheck, XCircle } from "lucide-react";
+import { CheckCircle2, Download, RefreshCw, ShieldCheck, XCircle } from "lucide-react";
 import { GlassCard } from "../components/GlassCard";
 import type { ApiEndpointDoc, SystemHealthResponse } from "../types";
 
@@ -172,19 +172,84 @@ export function SystemHealthPage({ health, onRefresh }: SystemHealthPageProps) {
         </div>
       </GlassCard>
 
+      {/* GitHub README Coordinated Header & Footer Banner Set */}
+      <GlassCard className="space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h3 className="text-base font-semibold text-slate-100">
+              GitHub Repository Header & Footer Banner Set
+            </h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              High-resolution minimalist off-white & navy SVG banners in{" "}
+              <span className="font-mono text-slate-300">docs/assets/</span> (1600×400 px header
+              and 1600×200 px footer).
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="rounded-xl border border-white/10 bg-slate-950/70 p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-xs font-mono text-slate-300">
+                docs/assets/celeba_header_banner.svg · 1600 × 400 px
+              </div>
+              <a
+                href="/docs/assets/celeba_header_banner.svg"
+                download="celeba_header_banner.svg"
+                className="px-3 py-1.5 rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 text-xs font-medium text-slate-200 inline-flex items-center gap-1.5 whitespace-nowrap"
+              >
+                <Download className="w-3.5 h-3.5 text-sky-400" />
+                <span>Download Header SVG</span>
+              </a>
+            </div>
+            <img
+              src="/docs/assets/celeba_header_banner.svg"
+              alt="CelebA Face Intelligence Suite 1600x400 Header Banner"
+              className="w-full rounded-lg border border-slate-200/20"
+            />
+          </div>
+
+          <div className="rounded-xl border border-white/10 bg-slate-950/70 p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-xs font-mono text-slate-300">
+                docs/assets/celeba_footer_banner.svg · 1600 × 200 px
+              </div>
+              <a
+                href="/docs/assets/celeba_footer_banner.svg"
+                download="celeba_footer_banner.svg"
+                className="px-3 py-1.5 rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 text-xs font-medium text-slate-200 inline-flex items-center gap-1.5 whitespace-nowrap"
+              >
+                <Download className="w-3.5 h-3.5 text-sky-400" />
+                <span>Download Footer SVG</span>
+              </a>
+            </div>
+            <img
+              src="/docs/assets/celeba_footer_banner.svg"
+              alt="CelebA Face Intelligence Suite 1600x200 Footer Banner"
+              className="w-full rounded-lg border border-slate-200/20"
+            />
+          </div>
+        </div>
+      </GlassCard>
+
       {/* Reproducible Setup Instructions */}
       <GlassCard className="space-y-3">
         <h3 className="text-base font-semibold text-slate-100">Reproducible Setup Instructions</h3>
         <pre className="p-4 rounded-lg bg-slate-950/80 border border-white/10 text-xs font-mono text-slate-300 overflow-x-auto leading-relaxed">
-{`# 1. Start the Node.js + Vite Full-Stack Studio (Port 3000)
+{`# Option A: Full-Stack Multi-Container Deployment (Web + FastAPI ML + MySQL 8.0)
+cp .env.example .env   # Configure GEMINI_API_KEY, MYSQL_PASSWORD, MYSQL_ROOT_PASSWORD
+docker compose up --build
+
+# Option B: Local Manual Services
+# 1. Node.js + Vite Full-Stack Studio (Port 3000)
 npm ci
 npm run dev
 
-# 2. (Optional) Start the Python FastAPI PyTorch/XGBoost Inference Microservice (Port 8001)
+# 2. Python FastAPI PyTorch/XGBoost Inference Microservice (Port 8001)
 pip install -r requirements.txt
 uvicorn backend.fastapi_app:app --host 0.0.0.0 --port 8001
 
-# 3. (Optional) Initialize MySQL celeba_db (see config/database.env.example)
+# 3. MySQL celeba_db (see config/database.env.example)
 mysql -u root -p < database/celeba_db_setup.sql`}
         </pre>
       </GlassCard>

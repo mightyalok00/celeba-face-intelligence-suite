@@ -193,3 +193,106 @@ async def predict(
     result["latency_ms"] = elapsed_ms
     result["retained_on_disk"] = False
     return result
+
+
+def _load_slsqp_weights() -> Dict[str, float]:
+    """Loads calibrated SLSQP weights from latest_training_run.json without hardcoding fallback fake predictions."""
+    run_path = PROJECT_ROOT / "reports" / "benchmarks" / "latest_training_run.json"
+    if not run_path.exists():
+        return {}
+    try:
+        payload = json.loads(run_path.read_text(encoding="utf-8"))
+        raw_weights = payload.get("optimal_ensemble_weights") or {}
+        mapped: Dict[str, float] = {}
+        for key, value in raw_weights.items():
+            lowered = str(key).lower()
+            weight_val = float(value)
+            if "residual" in lowered or "cnn" in lowered:
+                mapped["Residual CNN"] = weight_val
+            elif "vision" in lowered or "vit" in lowered:
+                mapped["Vision Transformer"] = weight_val
+            elif "bilstm" in lowered:
+                mapped["Spatial BiLSTM"] = weight_val
+            elif "ann" in lowered:
+                mapped["ANN"] = weight_val
+        return mapped
+    except Exception:
+        return {}
+
+
+@app.post("/api/predict/consensus")
+async def predict_consensus(
+    file: UploadFile = File(...),
+    use_tta: bool = Form(True),
+) -> Dict[str, Any]:
+    t0 = time.perf_counter()
+    raw_bytes = await file.read()
+    # In-memory validation only; uploaded facial image is never persisted to disk
+    img = validate_uploaded_image(raw_bytes, file.content_type)
+
+    eng = get_inference_engine()
+    ordered_candidates = ["Residual CNN", "Vision Transformer", "Spatial BiLSTM", "ANN"]
+    available = [arch for arch in ordered_candidates if arch in eng.verified_checkpoints]
+
+    if not available:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "No verified PyTorch model checkpoints are available on disk for consensus evaluation. "
+                "Refusing to return uninitialized weights as real predictions."
+            ),
+        )
+
+    slsqp_raw = _load_slsqp_weights()
+    raw_weights = {arch: max(0.0, float(slsqp_raw.get(arch, 0.0))) for arch in available}
+    weight_sum = sum(raw_weights.values())
+
+    if weight_sum <= 0.0:
+        norm_weights = {arch: 1.0 / len(available) for arch in available}
+        weighting_strategy = "uniform_over_verified_checkpoints"
+    else:
+        norm_weights = {arch: raw_weights[arch] / weight_sum for arch in available}
+        weighting_strategy = "slsqp_renormalized_over_verified_checkpoints"
+
+    per_model: List[Dict[str, Any]] = []
+    weighted_prob = 0.0
+    smiling_votes = 0
+
+    for arch in available:
+        single = eng.predict_attribute(img, architecture=arch, use_tta=use_tta)
+        prob = float(single["probability"])
+        pred = int(single["prediction"])
+        w = norm_weights[arch]
+        weighted_prob += prob * w
+        if pred == 1:
+            smiling_votes += 1
+        per_model.append(
+            {
+                "architecture": arch,
+                "probability": round(prob, 4),
+                "prediction": pred,
+                "confidence": round(float(single["confidence"]), 4),
+                "uncertainty_std": round(float(single["prediction_uncertainty_std"]), 4),
+                "slsqp_raw_weight": round(raw_weights[arch], 4),
+                "normalized_weight": round(w, 4),
+                "checkpoint_loaded": single.get("checkpoint_loaded", ""),
+            }
+        )
+
+    consensus_prediction = 1 if weighted_prob >= 0.5 else 0
+    majority_votes = max(smiling_votes, len(available) - smiling_votes)
+    agreement_ratio = round(majority_votes / len(available), 4)
+    elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+
+    return {
+        "source": "pytorch_verified_consensus",
+        "use_tta": use_tta,
+        "weighting_strategy": weighting_strategy,
+        "models_evaluated": len(available),
+        "weighted_probability": round(weighted_prob, 4),
+        "consensus_prediction": consensus_prediction,
+        "agreement_ratio": agreement_ratio,
+        "per_model": per_model,
+        "latency_ms": elapsed_ms,
+        "retained_on_disk": False,
+    }

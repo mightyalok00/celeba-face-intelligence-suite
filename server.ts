@@ -675,12 +675,36 @@ Repository Ground Truth:
 // ---------------------------------------------------------------------------
 
 const app = express();
+app.disable("x-powered-by");
 app.use(express.json({ limit: "15mb" }));
 
 // CORS & Security Headers
 app.use((req: Request, res: Response, next: NextFunction) => {
+  const isProd = process.env.NODE_ENV === "production";
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("X-Permitted-Cross-Domain-Policies", "none");
+  res.setHeader("Permissions-Policy", "camera=(self), microphone=(), geolocation=()");
+  res.setHeader(
+    "Content-Security-Policy",
+    [
+      "default-src 'self'",
+      isProd
+        ? "script-src 'self' 'unsafe-inline'"
+        : "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' https://fonts.gstatic.com data:",
+      "img-src 'self' data: blob:",
+      "media-src 'self' blob:",
+      isProd ? "connect-src 'self'" : "connect-src 'self' ws: wss:",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+    ].join("; ")
+  );
+  if (req.path.startsWith("/api/")) {
+    res.setHeader("Cache-Control", "no-store, max-age=0");
+  }
   if (req.method === "OPTIONS") {
     res.status(204).end();
     return;
@@ -1345,7 +1369,7 @@ async function startServer(): Promise<void> {
   if (!isProd) {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
-      server: { middlewareMode: true, hmr: false },
+      server: { middlewareMode: true, hmr: false, allowedHosts: true },
       appType: "spa",
     });
     app.use(vite.middlewares);

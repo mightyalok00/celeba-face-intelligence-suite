@@ -1,17 +1,28 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertCircle, Camera, CameraOff, Cpu, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
 import { GlassCard } from "../components/GlassCard";
-import type { GeminiAnalysisResult, MlPredictionResult } from "../types";
+import type {
+  GeminiAnalysisResult,
+  MlPredictionResult,
+  ModelsResponse,
+  PageId,
+  SystemHealthResponse,
+} from "../types";
 
 const MODEL_OPTIONS = [
   "Vision Transformer",
   "Spatial BiLSTM",
   "Residual CNN",
   "ANN",
-  "5-Fold Ensemble + TTA",
 ];
 
-export function CameraAnalysisPage() {
+interface CameraAnalysisPageProps {
+  health?: SystemHealthResponse | null;
+  models?: ModelsResponse | null;
+  onNavigate?: (page: PageId) => void;
+}
+
+export function CameraAnalysisPage({ health, models, onNavigate }: CameraAnalysisPageProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -21,6 +32,16 @@ export function CameraAnalysisPage() {
 
   const [capturedFrame, setCapturedFrame] = useState<string | null>(null);
   const [selectedArchitecture, setSelectedArchitecture] = useState("Vision Transformer");
+
+  const mlBackend = health?.services.pythonMlBackend;
+  const backendConnected = Boolean(mlBackend?.reachable && mlBackend?.engineReady);
+  const liveVerifiedSet = new Set(
+    mlBackend?.verifiedCheckpoints ?? models?.mlBackend.verifiedCheckpoints ?? []
+  );
+  const diskCheckpointMap = new Map(
+    (models?.checkpoints ?? health?.checkpoints ?? []).map((c) => [c.architecture, c])
+  );
+  const selectedModelReady = backendConnected && liveVerifiedSet.has(selectedArchitecture);
 
   const [mlLoading, setMlLoading] = useState(false);
   const [mlResult, setMlResult] = useState<MlPredictionResult | null>(null);
@@ -291,18 +312,35 @@ export function CameraAnalysisPage() {
               onChange={(e) => setSelectedArchitecture(e.target.value)}
               className="flex-1 rounded-lg border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100"
             >
-              {MODEL_OPTIONS.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
+              {MODEL_OPTIONS.map((m) => {
+                const live = backendConnected && liveVerifiedSet.has(m);
+                const onDisk = diskCheckpointMap.get(m)?.exists ?? false;
+                const suffix = live
+                  ? " (Ready)"
+                  : onDisk
+                    ? " (Backend Offline)"
+                    : " (Checkpoint Missing)";
+                return (
+                  <option key={m} value={m} disabled={!live && !onDisk}>
+                    {m}
+                    {suffix}
+                  </option>
+                );
+              })}
             </select>
 
             <button
               type="button"
-              disabled={!capturedFrame || mlLoading}
+              disabled={!capturedFrame || mlLoading || !selectedModelReady}
               onClick={runMlSnapshot}
-              className="px-4 py-2 min-h-[40px] rounded-lg border border-white/15 bg-white/10 hover:bg-white/15 disabled:opacity-40 text-xs font-semibold text-slate-100 inline-flex items-center justify-center gap-1.5"
+              title={
+                !backendConnected
+                  ? "FastAPI ML backend is disconnected"
+                  : !selectedModelReady
+                    ? `No verified checkpoint loaded for ${selectedArchitecture}`
+                    : "Run live PyTorch inference"
+              }
+              className="px-4 py-2 min-h-[40px] rounded-lg border border-white/15 bg-white/10 hover:bg-white/15 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold text-slate-100 inline-flex items-center justify-center gap-1.5"
             >
               <Cpu className="w-4 h-4" />
               <span>{mlLoading ? "Running..." : "ML Predict"}</span>
@@ -318,6 +356,24 @@ export function CameraAnalysisPage() {
               <span>{geminiLoading ? "Analyzing..." : "Gemini Analyze"}</span>
             </button>
           </div>
+
+          {!backendConnected && (
+            <div className="p-2.5 rounded-lg border border-amber-500/30 bg-amber-950/20 text-xs text-amber-200 flex items-center justify-between gap-2">
+              <span>
+                PyTorch FastAPI backend is offline ({mlBackend?.url ?? "http://127.0.0.1:8001"}).
+                ML Predict is disabled until connected.
+              </span>
+              {onNavigate && (
+                <button
+                  type="button"
+                  onClick={() => onNavigate("system-health")}
+                  className="text-sky-300 hover:text-sky-200 underline underline-offset-4 shrink-0"
+                >
+                  Configure
+                </button>
+              )}
+            </div>
+          )}
 
           {mlError && (
             <div className="p-3 rounded-lg border border-amber-500/40 bg-amber-950/25 text-xs text-amber-200">

@@ -80,6 +80,12 @@ export interface ModelCardDoc {
   content: string;
 }
 
+export type BackendConnectionState =
+  | "connected_ready"
+  | "connected_no_checkpoints"
+  | "connected_degraded"
+  | "disconnected";
+
 export interface ModelsResponse {
   registry: {
     project: string;
@@ -93,8 +99,12 @@ export interface ModelsResponse {
   reproducibilityConfigYaml: string;
   mlBackend: {
     url: string;
+    defaultUrl?: string;
+    isCustomUrl?: boolean;
     online: boolean;
+    connectionState?: BackendConnectionState;
     verifiedCheckpoints: string[];
+    missingCheckpoints?: string[];
     error: string | null;
   };
 }
@@ -208,7 +218,9 @@ export interface MlPredictionResult {
   checkpoint_loaded: string;
   checkpoint_verified: boolean;
   is_ground_truth_lookup: boolean;
+  device?: string;
   latency_ms?: number;
+  gateway_roundtrip_ms?: number;
   retained_on_disk?: boolean;
 }
 
@@ -221,6 +233,7 @@ export interface MlConsensusModelEntry {
   slsqp_raw_weight: number;
   normalized_weight: number;
   checkpoint_loaded: string;
+  latency_ms?: number;
 }
 
 export interface MlConsensusResult {
@@ -233,6 +246,7 @@ export interface MlConsensusResult {
   agreement_ratio: number;
   per_model: MlConsensusModelEntry[];
   latency_ms?: number;
+  gateway_roundtrip_ms?: number;
   retained_on_disk?: boolean;
 }
 
@@ -252,9 +266,13 @@ export interface SystemHealthResponse {
     };
     pythonMlBackend: {
       url: string;
+      defaultUrl?: string;
+      isCustomUrl?: boolean;
       reachable: boolean;
       engineReady: boolean;
+      connectionState?: BackendConnectionState;
       verifiedCheckpoints: string[];
+      missingCheckpoints?: string[];
       latencyMs: number | null;
       error: string | null;
     };

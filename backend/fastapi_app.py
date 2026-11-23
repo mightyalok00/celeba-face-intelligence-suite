@@ -38,9 +38,18 @@ app = FastAPI(
     description="Real PyTorch & XGBoost facial attribute inference service for CelebA AI Studio.",
 )
 
+import os
+
+_default_origins = ["http://127.0.0.1:3000", "http://localhost:3000"]
+_extra_origins = [
+    o.strip()
+    for o in os.environ.get("CELEBA_CORS_ORIGINS", "").split(",")
+    if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"],
+    allow_origins=_default_origins + _extra_origins,
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
 )
@@ -103,20 +112,26 @@ def health() -> Dict[str, Any]:
         "residual_cnn.pt": (ckpt_dir / "residual_cnn.pt").exists(),
         "ann.pt": (ckpt_dir / "ann.pt").exists(),
     }
+    expected_architectures = ["Vision Transformer", "Spatial BiLSTM", "Residual CNN", "ANN"]
     engine_ready = False
     verified: List[str] = []
+    device = "cpu"
     try:
         eng = get_inference_engine()
         engine_ready = True
         verified = sorted(eng.verified_checkpoints)
+        device = str(eng.device)
     except HTTPException:
         engine_ready = False
 
+    missing = [arch for arch in expected_architectures if arch not in verified]
     return {
         "status": "healthy" if engine_ready else "degraded",
         "service": "celeba-fastapi-ml",
         "engine_ready": engine_ready,
+        "device": device,
         "verified_checkpoints": verified,
+        "missing_checkpoints": missing,
         "checkpoint_files": checkpoints,
         "error": _engine_error,
     }
@@ -191,6 +206,7 @@ async def predict(
     result = eng.predict_attribute(img, architecture=architecture, use_tta=use_tta)
     elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
     result["latency_ms"] = elapsed_ms
+    result["device"] = str(eng.device)
     result["retained_on_disk"] = False
     return result
 
@@ -259,7 +275,9 @@ async def predict_consensus(
     smiling_votes = 0
 
     for arch in available:
+        m_t0 = time.perf_counter()
         single = eng.predict_attribute(img, architecture=arch, use_tta=use_tta)
+        m_elapsed_ms = round((time.perf_counter() - m_t0) * 1000, 2)
         prob = float(single["probability"])
         pred = int(single["prediction"])
         w = norm_weights[arch]
@@ -276,6 +294,7 @@ async def predict_consensus(
                 "slsqp_raw_weight": round(raw_weights[arch], 4),
                 "normalized_weight": round(w, 4),
                 "checkpoint_loaded": single.get("checkpoint_loaded", ""),
+                "latency_ms": m_elapsed_ms,
             }
         )
 

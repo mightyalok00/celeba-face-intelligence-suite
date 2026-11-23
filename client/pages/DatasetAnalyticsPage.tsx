@@ -16,9 +16,13 @@ import type { DatasetAnalyticsResponse, GallerySample } from "../types";
 
 interface DatasetAnalyticsPageProps {
   analytics: DatasetAnalyticsResponse | null;
+  onAnalyzeGalleryImage?: (imageUrl: string) => void;
 }
 
-export function DatasetAnalyticsPage({ analytics }: DatasetAnalyticsPageProps) {
+export function DatasetAnalyticsPage({
+  analytics,
+  onAnalyzeGalleryImage,
+}: DatasetAnalyticsPageProps) {
   const [samples, setSamples] = useState<GallerySample[]>([]);
   const [activeFigure, setActiveFigure] = useState<LightboxFigure | null>(null);
 
@@ -221,7 +225,7 @@ export function DatasetAnalyticsPage({ analytics }: DatasetAnalyticsPageProps) {
             Interactive photo management: drag-and-drop local uploads, albums, favorites, search, full-screen zoom lightbox, and batch selection.
           </p>
         </div>
-        <GooglePhotosGallery samples={samples} />
+        <GooglePhotosGallery samples={samples} onSelectForAnalysis={onAnalyzeGalleryImage} />
       </GlassCard>
 
       <FigureLightbox figure={activeFigure} onClose={() => setActiveFigure(null)} />

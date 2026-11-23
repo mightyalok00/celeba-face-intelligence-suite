@@ -53,6 +53,7 @@ export default function App() {
   const [health, setHealth] = useState<SystemHealthResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [pendingAnalysisImage, setPendingAnalysisImage] = useState<string | null>(null);
 
   const navigateTo = useCallback((page: PageId) => {
     setActivePage(page);
@@ -62,6 +63,14 @@ export default function App() {
     }
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
+
+  const handleAnalyzeGalleryImage = useCallback(
+    (imageUrl: string) => {
+      setPendingAnalysisImage(imageUrl);
+      navigateTo("image-analysis");
+    },
+    [navigateTo]
+  );
 
   useEffect(() => {
     const onPopState = () => {
@@ -135,12 +144,28 @@ export default function App() {
             onNavigate={navigateTo}
           />
         )}
-        {activePage === "image-analysis" && <ImageAnalysisPage />}
-        {activePage === "camera-analysis" && <CameraAnalysisPage />}
+        {activePage === "image-analysis" && (
+          <ImageAnalysisPage
+            health={health}
+            models={models}
+            initialImageUrl={pendingAnalysisImage}
+            onConsumeInitialImage={() => setPendingAnalysisImage(null)}
+            onNavigate={navigateTo}
+            onRefreshHealth={() => void loadAll()}
+          />
+        )}
+        {activePage === "camera-analysis" && (
+          <CameraAnalysisPage health={health} models={models} onNavigate={navigateTo} />
+        )}
         {activePage === "model-comparison" && (
           <ModelComparisonPage benchmarks={benchmarks} models={models} />
         )}
-        {activePage === "dataset-analytics" && <DatasetAnalyticsPage analytics={analytics} />}
+        {activePage === "dataset-analytics" && (
+          <DatasetAnalyticsPage
+            analytics={analytics}
+            onAnalyzeGalleryImage={handleAnalyzeGalleryImage}
+          />
+        )}
         {activePage === "performance-reports" && (
           <PerformanceReportsPage benchmarks={benchmarks} analytics={analytics} />
         )}

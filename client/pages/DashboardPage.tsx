@@ -11,9 +11,10 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { ArrowRight, CheckCircle2, AlertTriangle } from "lucide-react";
+import { ArrowRight, CheckCircle2, AlertTriangle, Download } from "lucide-react";
 import { GlassCard } from "../components/GlassCard";
 import { HeroShowcaseSlider } from "../components/HeroShowcaseSlider";
+import { ScrollReveal } from "../components/ScrollReveal";
 import type {
   BenchmarkSuitesResponse,
   DatasetAnalyticsResponse,
@@ -84,6 +85,17 @@ export function DashboardPage({
     return [...rows].sort((a, b) => b.accuracyPct - a.accuracyPct)[0] ?? null;
   }, [benchmarks]);
 
+  const topF1Row = useMemo(() => {
+    const rows = benchmarks?.realImageProduction.rows ?? [];
+    return [...rows].sort((a, b) => b.f1Score - a.f1Score)[0] ?? null;
+  }, [benchmarks]);
+
+  const availableCheckpointNames = useMemo(
+    () => (health?.checkpoints ?? []).filter((c) => c.exists).map((c) => c.filename),
+    [health]
+  );
+
+  const exportSuiteParam = chartSuite === "real" ? "production" : "synthetic";
   const weightColors = ["#38BDF8", "#818CF8", "#34D399"];
 
   if (loading && !benchmarks) {
@@ -161,54 +173,86 @@ export function DashboardPage({
         </div>
       </div>
 
-      {/* 4 KPI Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <GlassCard>
-          <div className="text-xs font-medium text-slate-400">CelebA Dataset Scale</div>
-          <div className="text-2xl font-bold text-slate-50 mt-2 tabular-nums">
-            {(analytics?.manifest.total_images ?? 202599).toLocaleString()}
-          </div>
-          <div className="text-xs text-slate-400 mt-1 tabular-nums">
-            {(analytics?.manifest.total_unique_identities ?? 10177).toLocaleString()} identities · 40 attributes
-          </div>
-        </GlassCard>
+      {/* 6-Card Verified Research KPI Strip */}
+      <ScrollReveal>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+          <GlassCard className="hover:-translate-y-0.5 transition-transform">
+            <div className="text-xs font-medium text-slate-400">Verified Accuracy</div>
+            <div className="text-2xl font-bold text-slate-50 mt-2 tabular-nums">
+              {topAccuracyRow ? `${topAccuracyRow.accuracyPct.toFixed(2)}%` : "—"}
+            </div>
+            <div className="text-xs text-slate-400 mt-1 truncate" title={topAccuracyRow?.model}>
+              {topAccuracyRow?.model ?? "production_benchmark.csv"}
+            </div>
+          </GlassCard>
 
-        <GlassCard>
-          <div className="text-xs font-medium text-slate-400">Best Real-Image ROC-AUC</div>
-          <div className="text-2xl font-bold text-sky-300 mt-2 tabular-nums">
-            {topRealModel?.rocAuc ? topRealModel.rocAuc.toFixed(4) : "—"}
-          </div>
-          <div className="text-xs text-slate-400 mt-1 truncate">
-            {topRealModel?.model ?? "Loading..."} ({topRealModel?.accuracyPct.toFixed(2)}% Acc)
-          </div>
-        </GlassCard>
+          <GlassCard className="hover:-translate-y-0.5 transition-transform">
+            <div className="text-xs font-medium text-slate-400">Precision / Recall</div>
+            <div className="text-2xl font-bold text-emerald-300 mt-2 tabular-nums font-mono">
+              {topF1Row
+                ? `${(topF1Row.precision * 100).toFixed(1)} / ${(topF1Row.recall * 100).toFixed(1)}`
+                : "—"}
+            </div>
+            <div className="text-xs text-slate-400 mt-1 truncate">
+              Holdout % ({benchmarks?.realImageProduction.sampleCount ?? 75} real faces)
+            </div>
+          </GlassCard>
 
-        <GlassCard>
-          <div className="text-xs font-medium text-slate-400">Identity Leakage Audit</div>
-          <div className="text-2xl font-bold text-emerald-400 mt-2 tabular-nums">
-            {analytics?.splitManifestSummary.identityOverlapCount ?? 0}.0%
-          </div>
-          <div className="text-xs text-slate-400 mt-1">
-            StratifiedGroupKFold · {analytics?.splitManifestSummary.totalRows ?? 500} split rows verified
-          </div>
-        </GlassCard>
+          <GlassCard className="hover:-translate-y-0.5 transition-transform">
+            <div className="text-xs font-medium text-slate-400">Best F1-Score</div>
+            <div className="text-2xl font-bold text-slate-50 mt-2 tabular-nums font-mono">
+              {topF1Row ? topF1Row.f1Score.toFixed(4) : "—"}
+            </div>
+            <div className="text-xs text-slate-400 mt-1 truncate" title={topF1Row?.model}>
+              {topF1Row?.model ?? "Loading..."}
+            </div>
+          </GlassCard>
 
-        <GlassCard>
-          <div className="text-xs font-medium text-slate-400">5-Fold CV Mean Accuracy</div>
-          <div className="text-2xl font-bold text-slate-50 mt-2 tabular-nums">
-            {benchmarks?.crossValidation.meanAccuracy
-              ? `${(benchmarks.crossValidation.meanAccuracy * 100).toFixed(2)}%`
-              : "—"}
-          </div>
-          <div className="text-xs text-slate-400 mt-1">
-            {benchmarks?.crossValidation.folds.length ?? 0} folds evaluated (cross_validation_results.csv)
-          </div>
-        </GlassCard>
-      </div>
+          <GlassCard className="hover:-translate-y-0.5 transition-transform">
+            <div className="text-xs font-medium text-slate-400">Best Real ROC-AUC</div>
+            <div className="text-2xl font-bold text-sky-300 mt-2 tabular-nums font-mono">
+              {topRealModel?.rocAuc ? topRealModel.rocAuc.toFixed(4) : "—"}
+            </div>
+            <div className="text-xs text-slate-400 mt-1 truncate" title={topRealModel?.model}>
+              {topRealModel?.model ?? "Loading..."}
+            </div>
+          </GlassCard>
+
+          <GlassCard className="hover:-translate-y-0.5 transition-transform">
+            <div className="text-xs font-medium text-slate-400">Inference Latency</div>
+            <div className="text-2xl font-bold text-slate-50 mt-2 tabular-nums font-mono">
+              {health?.services.pythonMlBackend.reachable &&
+              health.services.pythonMlBackend.latencyMs !== null
+                ? `${health.services.pythonMlBackend.latencyMs} ms`
+                : "Offline"}
+            </div>
+            <div className="text-xs text-slate-400 mt-1 truncate">
+              {health?.services.pythonMlBackend.engineReady
+                ? `${health.services.pythonMlBackend.verifiedCheckpoints.length} checkpoints live`
+                : "Requires FastAPI backend"}
+            </div>
+          </GlassCard>
+
+          <GlassCard className="hover:-translate-y-0.5 transition-transform">
+            <div className="text-xs font-medium text-slate-400">Leakage & 5-Fold CV</div>
+            <div className="text-2xl font-bold text-emerald-400 mt-2 tabular-nums">
+              {analytics?.splitManifestSummary.identityOverlapCount ?? 0}.0%
+            </div>
+            <div className="text-xs text-slate-400 mt-1 tabular-nums">
+              CV Mean:{" "}
+              {benchmarks?.crossValidation.meanAccuracy
+                ? `${(benchmarks.crossValidation.meanAccuracy * 100).toFixed(2)}%`
+                : "—"}
+            </div>
+          </GlassCard>
+        </div>
+      </ScrollReveal>
 
       {/* Main Chart + Optimal Ensemble Weights */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-stretch">
-        <GlassCard className="xl:col-span-2 flex flex-col">
+      <ScrollReveal>
+        {(isVisible) => (
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-stretch">
+            <GlassCard className="xl:col-span-2 flex flex-col">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
             <div>
               <h3 className="text-base font-semibold text-slate-100">
@@ -221,29 +265,49 @@ export function DashboardPage({
               </p>
             </div>
 
-            <div className="inline-flex items-center p-1 rounded-lg bg-slate-950/80 border border-white/10 shrink-0">
-              <button
-                type="button"
-                onClick={() => setChartSuite("real")}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-                  chartSuite === "real"
-                    ? "bg-sky-500 text-slate-950"
-                    : "text-slate-300 hover:text-white"
-                }`}
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <div className="inline-flex items-center p-1 rounded-lg bg-slate-950/80 border border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setChartSuite("real")}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                    chartSuite === "real"
+                      ? "bg-sky-500 text-slate-950"
+                      : "text-slate-300 hover:text-white"
+                  }`}
+                >
+                  Real-Image Holdout
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setChartSuite("synthetic")}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                    chartSuite === "synthetic"
+                      ? "bg-amber-400 text-slate-950"
+                      : "text-slate-300 hover:text-white"
+                  }`}
+                >
+                  CI Smoke-Test (Synthetic)
+                </button>
+              </div>
+              <a
+                href={`/api/benchmarks/export?suite=${exportSuiteParam}&format=csv`}
+                download={`celeba_${exportSuiteParam}_benchmarks.csv`}
+                className="px-2.5 py-1.5 rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 text-xs text-slate-200 inline-flex items-center gap-1"
+                title="Download verified benchmark CSV"
               >
-                Real-Image Holdout
-              </button>
-              <button
-                type="button"
-                onClick={() => setChartSuite("synthetic")}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-                  chartSuite === "synthetic"
-                    ? "bg-amber-400 text-slate-950"
-                    : "text-slate-300 hover:text-white"
-                }`}
+                <Download className="w-3.5 h-3.5 text-sky-400" />
+                <span>CSV</span>
+              </a>
+              <a
+                href={`/api/benchmarks/export?suite=${exportSuiteParam}&format=json`}
+                download={`celeba_${exportSuiteParam}_benchmarks.json`}
+                className="px-2.5 py-1.5 rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 text-xs text-slate-200 inline-flex items-center gap-1"
+                title="Download verified benchmark JSON"
               >
-                CI Smoke-Test (Synthetic)
-              </button>
+                <Download className="w-3.5 h-3.5 text-emerald-400" />
+                <span>JSON</span>
+              </a>
             </div>
           </div>
 
@@ -297,8 +361,20 @@ export function DashboardPage({
                       fontSize: "12px",
                     }}
                   />
-                  <Bar dataKey="accuracy" name="Accuracy (%)" fill="#38BDF8" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="rocAuc" name="ROC-AUC (x100)" fill="#818CF8" radius={[4, 4, 0, 0]} />
+                  <Bar
+                    dataKey="accuracy"
+                    name="Accuracy (%)"
+                    fill="#38BDF8"
+                    radius={[4, 4, 0, 0]}
+                    isAnimationActive={isVisible}
+                  />
+                  <Bar
+                    dataKey="rocAuc"
+                    name="ROC-AUC (x100)"
+                    fill="#818CF8"
+                    radius={[4, 4, 0, 0]}
+                    isAnimationActive={isVisible}
+                  />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -340,6 +416,7 @@ export function DashboardPage({
                   innerRadius={52}
                   outerRadius={80}
                   paddingAngle={3}
+                  isAnimationActive={isVisible}
                 >
                   {weightsData.map((entry, idx) => (
                     <Cell key={entry.name} fill={weightColors[idx % weightColors.length]} />
@@ -374,7 +451,9 @@ export function DashboardPage({
             ))}
           </div>
         </GlassCard>
-      </div>
+          </div>
+        )}
+      </ScrollReveal>
 
       {/* Live Infrastructure & Checkpoint Readiness */}
       <GlassCard>
@@ -421,9 +500,11 @@ export function DashboardPage({
               )}
             </div>
             <p className="text-xs text-slate-400 mt-1.5">
-              {health?.checkpoints.filter((c) => c.exists).length ?? 0} of{" "}
-              {health?.checkpoints.length ?? 4} PyTorch checkpoints on disk (bilstm.pt,
-              vision_transformer.pt)
+              {availableCheckpointNames.length} of {health?.checkpoints.length ?? 4} PyTorch
+              checkpoints on disk
+              {availableCheckpointNames.length > 0
+                ? ` (${availableCheckpointNames.join(", ")})`
+                : ""}
             </p>
           </div>
 

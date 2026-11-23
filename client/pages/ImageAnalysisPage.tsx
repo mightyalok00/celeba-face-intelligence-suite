@@ -1,37 +1,75 @@
-import { useEffect, useState, type ChangeEvent, type DragEvent } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type DragEvent } from "react";
 import {
   AlertCircle,
   CheckCircle2,
   Cpu,
   Download,
   GitCompare,
+  Link2,
+  RefreshCw,
   ShieldCheck,
   Sparkles,
   SlidersHorizontal,
   Upload,
+  XCircle,
 } from "lucide-react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { GlassCard } from "../components/GlassCard";
 import type {
   GallerySample,
   GeminiAnalysisResult,
   MlConsensusResult,
   MlPredictionResult,
+  ModelsResponse,
+  PageId,
+  SystemHealthResponse,
 } from "../types";
 
-const MODEL_OPTIONS = [
-  "Vision Transformer",
-  "Spatial BiLSTM",
-  "Residual CNN",
-  "ANN",
-  "Single-Fold XGBoost",
-  "5-Fold Bagged XGBoost",
-  "5-Fold Ensemble + TTA",
+interface ModelCatalogItem {
+  name: string;
+  checkpointFile: string | null;
+  requiresPyTorch: boolean;
+}
+
+const MODEL_CATALOG: ModelCatalogItem[] = [
+  { name: "Vision Transformer", checkpointFile: "vision_transformer.pt", requiresPyTorch: true },
+  { name: "Spatial BiLSTM", checkpointFile: "bilstm.pt", requiresPyTorch: true },
+  { name: "Residual CNN", checkpointFile: "residual_cnn.pt", requiresPyTorch: true },
+  { name: "ANN", checkpointFile: "ann.pt", requiresPyTorch: true },
+  { name: "Single-Fold XGBoost", checkpointFile: null, requiresPyTorch: false },
+  { name: "5-Fold Bagged XGBoost", checkpointFile: null, requiresPyTorch: false },
+  { name: "5-Fold Ensemble + TTA", checkpointFile: null, requiresPyTorch: false },
 ];
 
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
 const MAX_BYTES = 10 * 1024 * 1024;
 
-export function ImageAnalysisPage() {
+interface ImageAnalysisPageProps {
+  health?: SystemHealthResponse | null;
+  models?: ModelsResponse | null;
+  initialImageUrl?: string | null;
+  onConsumeInitialImage?: () => void;
+  onNavigate?: (page: PageId) => void;
+  onRefreshHealth?: () => void;
+}
+
+export function ImageAnalysisPage({
+  health,
+  models,
+  initialImageUrl,
+  onConsumeInitialImage,
+  onNavigate,
+  onRefreshHealth,
+}: ImageAnalysisPageProps) {
   const [selectedFileDataUrl, setSelectedFileDataUrl] = useState<string | null>(null);
   const [selectedMimeType, setSelectedMimeType] = useState<string>("image/jpeg");
   const [selectedFileName, setSelectedFileName] = useState<string>("");
@@ -45,6 +83,7 @@ export function ImageAnalysisPage() {
   const [gallerySamples, setGallerySamples] = useState<GallerySample[]>([]);
   const [mlLoading, setMlLoading] = useState(false);
   const [mlResult, setMlResult] = useState<MlPredictionResult | null>(null);
+  const [mlRunHistory, setMlRunHistory] = useState<Record<string, MlPredictionResult>>({});
   const [mlError, setMlError] = useState<string | null>(null);
 
   const [consensusLoading, setConsensusLoading] = useState(false);
@@ -54,6 +93,56 @@ export function ImageAnalysisPage() {
   const [geminiLoading, setGeminiLoading] = useState(false);
   const [geminiResult, setGeminiResult] = useState<GeminiAnalysisResult | null>(null);
   const [geminiError, setGeminiError] = useState<string | null>(null);
+
+  const mlBackend = health?.services.pythonMlBackend;
+  const backendConnected = Boolean(mlBackend?.reachable && mlBackend?.engineReady);
+  const liveVerifiedCheckpoints = useMemo(
+    () =>
+      new Set(mlBackend?.verifiedCheckpoints ?? models?.mlBackend.verifiedCheckpoints ?? []),
+    [mlBackend?.verifiedCheckpoints, models?.mlBackend.verifiedCheckpoints]
+  );
+
+  const diskCheckpointMap = useMemo(
+    () => new Map((models?.checkpoints ?? health?.checkpoints ?? []).map((c) => [c.architecture, c])),
+    [models?.checkpoints, health?.checkpoints]
+  );
+
+  const modelStatuses = useMemo(
+    () =>
+      MODEL_CATALOG.map((item) => {
+        const diskInfo = diskCheckpointMap.get(item.name);
+        const onDisk = Boolean(diskInfo?.exists);
+        const liveReady = backendConnected && liveVerifiedCheckpoints.has(item.name);
+        let statusLabel = "Checkpoint missing";
+        if (!item.requiresPyTorch) {
+          statusLabel = "No serialized artifact";
+        } else if (liveReady) {
+          statusLabel = `Ready (${diskInfo?.sizeMb ?? "verified"} MB)`;
+        } else if (onDisk && !backendConnected) {
+          statusLabel = `On disk (${diskInfo?.sizeMb} MB) · Backend offline`;
+        } else if (onDisk && backendConnected) {
+          statusLabel = "Not loaded in FastAPI";
+        }
+        return {
+          ...item,
+          onDisk,
+          liveReady,
+          sizeMb: diskInfo?.sizeMb ?? null,
+          statusLabel,
+        };
+      }),
+    [diskCheckpointMap, backendConnected, liveVerifiedCheckpoints]
+  );
+
+  const selectedModelStatus = useMemo(
+    () => modelStatuses.find((m) => m.name === selectedArchitecture) ?? modelStatuses[0],
+    [modelStatuses, selectedArchitecture]
+  );
+
+  const canRunSingleMl = Boolean(selectedFileDataUrl && !mlLoading && selectedModelStatus?.liveReady);
+  const canRunConsensus = Boolean(
+    selectedFileDataUrl && !consensusLoading && backendConnected && liveVerifiedCheckpoints.size > 0
+  );
 
   useEffect(() => {
     fetch("/api/gallery")
@@ -66,9 +155,66 @@ export function ImageAnalysisPage() {
       .catch(() => {});
   }, []);
 
+  // Support analyzing an image directly sent from GooglePhotosGallery (data: or blob: URL)
+  useEffect(() => {
+    if (!initialImageUrl) return;
+    let cancelled = false;
+
+    const loadIncoming = async () => {
+      setFileError(null);
+      setMlResult(null);
+      setMlRunHistory({});
+      setMlError(null);
+      setConsensusResult(null);
+      setConsensusError(null);
+      setGeminiResult(null);
+      setGeminiError(null);
+
+      if (initialImageUrl.startsWith("data:")) {
+        const mimeMatch = /^data:([^;]+);base64,/.exec(initialImageUrl);
+        setSelectedFileDataUrl(initialImageUrl);
+        setSelectedMimeType(mimeMatch?.[1] || "image/jpeg");
+        setSelectedFileName("Gallery Image (In-Memory)");
+        onConsumeInitialImage?.();
+        return;
+      }
+
+      try {
+        const resp = await fetch(initialImageUrl);
+        const blob = await resp.blob();
+        if (blob.size > MAX_BYTES) {
+          if (!cancelled) setFileError("Selected gallery image exceeds the 10 MB limit.");
+          onConsumeInitialImage?.();
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (!cancelled && typeof reader.result === "string") {
+            setSelectedFileDataUrl(reader.result);
+            setSelectedMimeType(blob.type || "image/jpeg");
+            setSelectedFileName("Gallery Image (In-Memory)");
+          }
+          onConsumeInitialImage?.();
+        };
+        reader.readAsDataURL(blob);
+      } catch {
+        if (!cancelled) {
+          setFileError("Unable to load selected gallery image into browser memory.");
+        }
+        onConsumeInitialImage?.();
+      }
+    };
+
+    void loadIncoming();
+    return () => {
+      cancelled = true;
+    };
+  }, [initialImageUrl, onConsumeInitialImage]);
+
   const resetOutputs = () => {
     setFileError(null);
     setMlResult(null);
+    setMlRunHistory({});
     setMlError(null);
     setConsensusResult(null);
     setConsensusError(null);
@@ -138,7 +284,9 @@ export function ImageAnalysisPage() {
       if (!resp.ok) {
         setMlError(data.message || `Inference service error (HTTP ${resp.status})`);
       } else {
-        setMlResult(data as MlPredictionResult);
+        const parsed = data as MlPredictionResult;
+        setMlResult(parsed);
+        setMlRunHistory((prev) => ({ ...prev, [parsed.architecture]: parsed }));
       }
     } catch (err) {
       setMlError(err instanceof Error ? err.message : "Failed to reach ML inference backend.");
@@ -286,6 +434,30 @@ export function ImageAnalysisPage() {
 
   const hasAnyResult = Boolean(mlResult || consensusResult || geminiResult);
 
+  // Build real side-by-side comparison data solely from actual executed PyTorch predictions
+  const comparisonRows = useMemo(() => {
+    if (consensusResult && consensusResult.per_model.length > 0) {
+      return consensusResult.per_model.map((m) => ({
+        architecture: m.architecture,
+        probabilityPct: Number((m.probability * 100).toFixed(2)),
+        confidencePct: Number((m.confidence * 100).toFixed(2)),
+        uncertaintyStd: m.uncertainty_std,
+        normalizedWeightPct: Number((m.normalized_weight * 100).toFixed(1)),
+        latencyMs: m.latency_ms ?? null,
+        checkpoint: m.checkpoint_loaded,
+      }));
+    }
+    return Object.values(mlRunHistory).map((r) => ({
+      architecture: r.architecture,
+      probabilityPct: Number((r.probability * 100).toFixed(2)),
+      confidencePct: Number((r.confidence * 100).toFixed(2)),
+      uncertaintyStd: r.prediction_uncertainty_std,
+      normalizedWeightPct: null as number | null,
+      latencyMs: r.latency_ms ?? null,
+      checkpoint: r.checkpoint_loaded,
+    }));
+  }, [consensusResult, mlRunHistory]);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -294,8 +466,8 @@ export function ImageAnalysisPage() {
             Facial Attribute & Multimodal Image Analysis
           </h2>
           <p className="text-sm text-slate-400 mt-1">
-            Upload an image or select a reference CelebA sample to execute PyTorch inference,
-            multi-architecture consensus, and privacy-preserving Gemini analysis.
+            Upload an image or open one from the Gallery to run real PyTorch checkpoint inference,
+            multi-architecture consensus, and privacy-preserving Gemini visual analysis.
           </p>
         </div>
 
@@ -320,6 +492,61 @@ export function ImageAnalysisPage() {
           </div>
         )}
       </div>
+
+      {/* Live FastAPI Backend & Checkpoint Readiness Status Strip */}
+      <GlassCard className="p-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            {backendConnected && liveVerifiedCheckpoints.size > 0 ? (
+              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+            ) : (
+              <XCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+            )}
+            <div className="space-y-0.5 text-xs">
+              <div className="font-semibold text-slate-100 flex flex-wrap items-center gap-2">
+                <span>
+                  {backendConnected && liveVerifiedCheckpoints.size > 0
+                    ? `PyTorch FastAPI Connected · ${liveVerifiedCheckpoints.size} Verified Checkpoints Ready`
+                    : backendConnected
+                      ? "PyTorch FastAPI Connected · No Verified Checkpoints Loaded"
+                      : "PyTorch FastAPI Backend Disconnected"}
+                </span>
+                <span className="font-mono text-[11px] text-slate-400">
+                  ({mlBackend?.url ?? "http://127.0.0.1:8001"})
+                </span>
+              </div>
+              <p className="text-slate-400">
+                {backendConnected && liveVerifiedCheckpoints.size > 0
+                  ? `Active checkpoints: ${Array.from(liveVerifiedCheckpoints).join(", ")}. Preprocessing: 64×64 RGB [0, 1] normalization.`
+                  : "Live PyTorch inference is disabled until a FastAPI backend is reachable. No synthetic predictions are ever substituted. Gemini multimodal analysis remains available independently."}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {onRefreshHealth && (
+              <button
+                type="button"
+                onClick={onRefreshHealth}
+                className="px-3 py-1.5 rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 text-xs font-medium text-slate-200 inline-flex items-center gap-1.5"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Recheck</span>
+              </button>
+            )}
+            {onNavigate && (
+              <button
+                type="button"
+                onClick={() => onNavigate("system-health")}
+                className="px-3 py-1.5 rounded-lg border border-sky-400/30 bg-sky-500/10 hover:bg-sky-500/20 text-xs font-medium text-sky-300 inline-flex items-center gap-1.5"
+              >
+                <Link2 className="w-3.5 h-3.5" />
+                <span>Configure FastAPI URL</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </GlassCard>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left: Upload & Controls */}
@@ -462,18 +689,27 @@ export function ImageAnalysisPage() {
           {/* Model & TTA Controls */}
           <div className="space-y-3 pt-2 border-t border-white/10">
             <div>
-              <label htmlFor="archSelect" className="block text-xs font-medium text-slate-300 mb-1.5">
-                ML Architecture
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label htmlFor="archSelect" className="text-xs font-medium text-slate-300">
+                  ML Architecture
+                </label>
+                <span
+                  className={`text-[11px] font-medium ${
+                    selectedModelStatus?.liveReady ? "text-emerald-400" : "text-amber-400"
+                  }`}
+                >
+                  {selectedModelStatus?.statusLabel}
+                </span>
+              </div>
               <select
                 id="archSelect"
                 value={selectedArchitecture}
                 onChange={(e) => setSelectedArchitecture(e.target.value)}
                 className="w-full rounded-lg border border-white/15 bg-slate-950 px-3 py-2.5 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-400"
               >
-                {MODEL_OPTIONS.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
+                {modelStatuses.map((m) => (
+                  <option key={m.name} value={m.name} disabled={!m.liveReady && !m.onDisk}>
+                    {m.name} — {m.statusLabel}
                   </option>
                 ))}
               </select>
@@ -492,7 +728,7 @@ export function ImageAnalysisPage() {
             <div className="rounded-lg border border-white/10 bg-slate-950/60 p-3 space-y-2">
               <div className="flex items-center justify-between text-xs">
                 <label htmlFor="decisionThresholdSlider" className="font-medium text-slate-300">
-                  Decision Threshold
+                  Decision Threshold (Smiling)
                 </label>
                 <span className="font-mono font-semibold text-sky-300 tabular-nums">
                   {thresholdPct}%
@@ -513,8 +749,15 @@ export function ImageAnalysisPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
               <button
                 type="button"
-                disabled={!selectedFileDataUrl || mlLoading}
+                disabled={!canRunSingleMl}
                 onClick={runMlInference}
+                title={
+                  !backendConnected
+                    ? "Connect FastAPI backend to enable PyTorch inference"
+                    : !selectedModelStatus?.liveReady
+                      ? `Checkpoint unavailable for ${selectedArchitecture}`
+                      : "Run real PyTorch inference"
+                }
                 className="px-4 py-2.5 min-h-[42px] rounded-lg border border-white/15 bg-white/10 hover:bg-white/15 disabled:opacity-40 disabled:cursor-not-allowed text-slate-100 text-xs sm:text-sm font-semibold transition-colors inline-flex items-center justify-center gap-2 whitespace-nowrap"
               >
                 <Cpu className="w-4 h-4" />
@@ -534,8 +777,13 @@ export function ImageAnalysisPage() {
 
             <button
               type="button"
-              disabled={!selectedFileDataUrl || consensusLoading}
+              disabled={!canRunConsensus}
               onClick={runConsensusCheck}
+              title={
+                !backendConnected
+                  ? "Connect FastAPI backend to run multi-architecture consensus"
+                  : "Compare all live verified PyTorch checkpoints side by side"
+              }
               className="w-full px-4 py-2.5 min-h-[42px] rounded-lg border border-sky-400/30 bg-sky-500/10 hover:bg-sky-500/20 disabled:opacity-40 disabled:cursor-not-allowed text-sky-200 text-xs sm:text-sm font-semibold transition-colors inline-flex items-center justify-center gap-2"
             >
               <GitCompare className="w-4 h-4" />
@@ -620,37 +868,127 @@ export function ImageAnalysisPage() {
                     </div>
                   </div>
                   <div className="p-3 rounded-lg bg-slate-950/60 border border-white/10">
-                    <div className="text-xs text-slate-400">Probability</div>
+                    <div className="text-xs text-slate-400">Smiling Prob.</div>
                     <div className="text-lg font-bold text-sky-300 mt-1 font-mono tabular-nums">
                       {(mlResult.probability * 100).toFixed(2)}%
                     </div>
                   </div>
                   <div className="p-3 rounded-lg bg-slate-950/60 border border-white/10">
-                    <div className="text-xs text-slate-400">TTA Uncertainty</div>
-                    <div className="text-lg font-bold text-slate-100 mt-1 font-mono tabular-nums">
-                      ±{mlResult.prediction_uncertainty_std.toFixed(4)}
+                    <div className="text-xs text-slate-400">Confidence</div>
+                    <div className="text-lg font-bold text-emerald-300 mt-1 font-mono tabular-nums">
+                      {(mlResult.confidence * 100).toFixed(1)}%
                     </div>
                   </div>
                   <div className="p-3 rounded-lg bg-slate-950/60 border border-white/10">
-                    <div className="text-xs text-slate-400">Latency</div>
+                    <div className="text-xs text-slate-400">Inference Latency</div>
                     <div className="text-lg font-bold text-slate-100 mt-1 font-mono tabular-nums">
                       {mlResult.latency_ms ?? 0} ms
                     </div>
                   </div>
                 </div>
+
+                {/* Attribute Probability Bar with Active Threshold Marker */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-300 font-medium">
+                      Supported Attribute: Smiling (64×64×3 RGB)
+                    </span>
+                    <span className="font-mono text-slate-400 tabular-nums">
+                      TTA Std: ±{mlResult.prediction_uncertainty_std.toFixed(4)}
+                    </span>
+                  </div>
+                  <div className="relative h-3 rounded-full bg-slate-950 border border-white/10 overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-sky-500 to-emerald-400 transition-all duration-300"
+                      style={{ width: `${Math.min(100, Math.max(0, mlResult.probability * 100))}%` }}
+                    />
+                    <div
+                      className="absolute top-0 bottom-0 w-0.5 bg-amber-300"
+                      style={{ left: `${thresholdPct}%` }}
+                      title={`Decision threshold: ${thresholdPct}%`}
+                    />
+                  </div>
+                </div>
+
                 <div className="text-xs text-slate-400 font-mono">
                   Checkpoint: {mlResult.checkpoint_loaded} · TTA Views: {mlResult.tta_views_evaluated}
+                  {mlResult.device ? ` · Device: ${mlResult.device}` : ""}
                 </div>
               </div>
             )}
 
             {!mlLoading && !mlError && !mlResult && (
               <p className="text-sm text-slate-400">
-                Select an image and click <strong className="text-slate-200">Run ML Model</strong> to
-                query the FastAPI PyTorch/XGBoost service.
+                {backendConnected
+                  ? "Select an image and click Run ML Model to execute verified PyTorch checkpoint inference."
+                  : "PyTorch FastAPI backend is currently disconnected. Configure a reachable FastAPI URL in System Health & API, or run Gemini Analysis for visual expression & quality cues."}
               </p>
             )}
           </GlassCard>
+
+          {/* Interactive Live Model Comparison Chart & Table (Rendered only from actual executed predictions) */}
+          {comparisonRows.length > 0 && (
+            <GlassCard className="space-y-4">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-100">
+                    Live Model Prediction Comparison
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Actual PyTorch inference probabilities vs active {thresholdPct}% decision threshold
+                  </p>
+                </div>
+                <span className="text-xs font-mono text-sky-300 tabular-nums">
+                  {comparisonRows.length} {comparisonRows.length === 1 ? "model" : "models"}
+                </span>
+              </div>
+
+              <div className="h-52 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={comparisonRows}
+                    margin={{ top: 10, right: 16, left: -10, bottom: 4 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.12)" />
+                    <XAxis dataKey="architecture" tick={{ fill: "#CBD5E1", fontSize: 11 }} />
+                    <YAxis domain={[0, 100]} unit="%" tick={{ fill: "#94A3B8", fontSize: 11 }} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "#0F172A",
+                        borderColor: "rgba(255,255,255,0.12)",
+                        borderRadius: "8px",
+                        color: "#F8FAFC",
+                        fontSize: "12px",
+                      }}
+                    />
+                    <ReferenceLine
+                      y={thresholdPct}
+                      stroke="#FBBF24"
+                      strokeDasharray="4 4"
+                      label={{
+                        value: `Threshold ${thresholdPct}%`,
+                        fill: "#FBBF24",
+                        fontSize: 10,
+                        position: "insideTopRight",
+                      }}
+                    />
+                    <Bar
+                      dataKey="probabilityPct"
+                      name="Smiling Probability (%)"
+                      fill="#38BDF8"
+                      radius={[4, 4, 0, 0]}
+                    />
+                    <Bar
+                      dataKey="confidencePct"
+                      name="Confidence (%)"
+                      fill="#34D399"
+                      radius={[4, 4, 0, 0]}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </GlassCard>
+          )}
 
           {/* Multi-Architecture Consensus Panel */}
           {(consensusLoading || consensusError || consensusResult) && (

@@ -138,7 +138,7 @@ export function PhotoEditorModal({ imageUrl, filename, onClose, onSaveEdited }: 
       }
 
       if (current.filter === "vivid") {
-        filterString += " saturate(140%) contrast(110%";
+        filterString += " saturate(140%) contrast(110%)";
       } else if (current.filter === "cinematic") {
         filterString += " contrast(120%) brightness(95%) sepia(20%)";
       } else if (current.filter === "bw") {
@@ -157,8 +157,8 @@ export function PhotoEditorModal({ imageUrl, filename, onClose, onSaveEdited }: 
   );
 
   useEffect(() => {
-    renderCanvas(canvasRef.current);
-  }, [imageElement, state, renderCanvas]);
+    renderCanvas(canvasRef.current, showBeforeAfter ? DEFAULT_STATE : state);
+  }, [imageElement, state, showBeforeAfter, renderCanvas]);
 
   const handleExport = () => {
     if (!canvasRef.current) return;

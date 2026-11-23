@@ -26,9 +26,84 @@ const PORT = Number(process.env.PORT) || 3000;
 const HOST = "0.0.0.0";
 const DEFAULT_GEMINI_MODEL = "gemini-4-hydrogen";
 const FALLBACK_GEMINI_MODEL = "gemini-3.1-flash-lite";
-const PYTHON_ML_BACKEND_URL = (
+const DEFAULT_PYTHON_ML_BACKEND_URL = (
   process.env.PYTHON_ML_BACKEND_URL || "http://127.0.0.1:8001"
 ).replace(/\/+$/, "");
+
+let runtimeMlBackendUrl = DEFAULT_PYTHON_ML_BACKEND_URL;
+
+function getActiveMlBackendUrl(): string {
+  return runtimeMlBackendUrl;
+}
+
+function validateMlBackendUrl(raw: unknown): { ok: true; url: string } | { ok: false; message: string } {
+  if (typeof raw !== "string" || !raw.trim()) {
+    return { ok: false, message: "Backend URL is required." };
+  }
+  const trimmed = raw.trim().replace(/\/+$/, "");
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return { ok: false, message: "Invalid URL format. Provide a valid http(s):// FastAPI base URL." };
+  }
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return { ok: false, message: "Only http:// and https:// protocols are supported." };
+  }
+  if (parsed.username || parsed.password) {
+    return { ok: false, message: "Embedded URL credentials are not permitted." };
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  const isLoopback = host === "127.0.0.1" || host === "localhost" || host === "::1";
+
+  // Block cloud metadata & non-loopback internal network targets
+  const blockedHosts = new Set([
+    "169.254.169.254",
+    "metadata.google.internal",
+    "metadata.goog",
+    "0.0.0.0",
+  ]);
+  if (blockedHosts.has(host)) {
+    return { ok: false, message: "Blocked host: metadata and wildcard addresses are not allowed." };
+  }
+
+  if (!isLoopback) {
+    const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+    if (ipv4) {
+      const [a, b] = [Number(ipv4[1]), Number(ipv4[2])];
+      const isPrivate =
+        a === 10 ||
+        a === 127 ||
+        a === 0 ||
+        (a === 169 && b === 254) ||
+        (a === 172 && b >= 16 && b <= 31) ||
+        (a === 192 && b === 168);
+      if (isPrivate) {
+        return {
+          ok: false,
+          message:
+            "Private or link-local IP addresses cannot be configured from the client. Use localhost/127.0.0.1 or a public HTTPS endpoint.",
+        };
+      }
+    }
+    if (host.includes(":") || host.endsWith(".internal") || host.endsWith(".local")) {
+      return {
+        ok: false,
+        message: "Internal hostnames are not permitted. Use a public HTTPS FastAPI URL or localhost.",
+      };
+    }
+    if (parsed.protocol !== "https:") {
+      return {
+        ok: false,
+        message: "Remote FastAPI endpoints must use https:// (http:// is allowed only for localhost/127.0.0.1).",
+      };
+    }
+  }
+
+  return { ok: true, url: `${parsed.origin}${parsed.pathname}`.replace(/\/+$/, "") };
+}
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
 const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
@@ -439,26 +514,45 @@ function getCelebritiesCount(): number {
 // Upstream Probes (Python FastAPI ML Backend & MySQL TCP Check)
 // ---------------------------------------------------------------------------
 
-async function probePythonMlBackend(): Promise<{
+type BackendConnectionState =
+  | "connected_ready"
+  | "connected_no_checkpoints"
+  | "connected_degraded"
+  | "disconnected";
+
+async function probePythonMlBackend(targetUrl?: string): Promise<{
   url: string;
+  defaultUrl: string;
+  isCustomUrl: boolean;
   reachable: boolean;
   engineReady: boolean;
+  connectionState: BackendConnectionState;
   verifiedCheckpoints: string[];
+  missingCheckpoints: string[];
   latencyMs: number | null;
   error: string | null;
 }> {
+  const url = (targetUrl ?? getActiveMlBackendUrl()).replace(/\/+$/, "");
+  const isCustomUrl = url !== DEFAULT_PYTHON_ML_BACKEND_URL;
+  const diskInventory = getCheckpointInventory();
+  const diskMissing = diskInventory.filter((c) => !c.exists).map((c) => c.architecture);
   const t0 = performance.now();
+
   try {
-    const resp = await fetch(`${PYTHON_ML_BACKEND_URL}/health`, {
-      signal: AbortSignal.timeout(1200),
+    const resp = await fetch(`${url}/health`, {
+      signal: AbortSignal.timeout(2500),
     });
     const latencyMs = Number((performance.now() - t0).toFixed(1));
     if (!resp.ok) {
       return {
-        url: PYTHON_ML_BACKEND_URL,
+        url,
+        defaultUrl: DEFAULT_PYTHON_ML_BACKEND_URL,
+        isCustomUrl,
         reachable: true,
         engineReady: false,
+        connectionState: "connected_degraded",
         verifiedCheckpoints: [],
+        missingCheckpoints: diskMissing,
         latencyMs,
         error: `FastAPI returned HTTP ${resp.status}`,
       };
@@ -467,35 +561,59 @@ async function probePythonMlBackend(): Promise<{
       service?: string;
       engine_ready?: boolean;
       verified_checkpoints?: string[];
+      missing_checkpoints?: string[];
       error?: string | null;
     };
     if (data.service !== "celeba-fastapi-ml") {
       return {
-        url: PYTHON_ML_BACKEND_URL,
+        url,
+        defaultUrl: DEFAULT_PYTHON_ML_BACKEND_URL,
+        isCustomUrl,
         reachable: false,
         engineReady: false,
+        connectionState: "disconnected",
         verifiedCheckpoints: [],
+        missingCheckpoints: diskMissing,
         latencyMs,
-        error: `Endpoint at ${PYTHON_ML_BACKEND_URL} is not the CelebA FastAPI ML service (service="${data.service ?? "unknown"}").`,
+        error: `Endpoint at ${url} is not the CelebA FastAPI ML service (service="${data.service ?? "unknown"}").`,
       };
     }
+    const verified = Array.isArray(data.verified_checkpoints) ? data.verified_checkpoints : [];
+    const missing = Array.isArray(data.missing_checkpoints)
+      ? data.missing_checkpoints
+      : diskInventory.map((c) => c.architecture).filter((arch) => !verified.includes(arch));
+    const engineReady = Boolean(data.engine_ready);
+    const connectionState: BackendConnectionState = !engineReady
+      ? "connected_degraded"
+      : verified.length > 0
+        ? "connected_ready"
+        : "connected_no_checkpoints";
+
     return {
-      url: PYTHON_ML_BACKEND_URL,
+      url,
+      defaultUrl: DEFAULT_PYTHON_ML_BACKEND_URL,
+      isCustomUrl,
       reachable: true,
-      engineReady: Boolean(data.engine_ready),
-      verifiedCheckpoints: Array.isArray(data.verified_checkpoints) ? data.verified_checkpoints : [],
+      engineReady,
+      connectionState,
+      verifiedCheckpoints: verified,
+      missingCheckpoints: missing,
       latencyMs,
       error: data.error ?? null,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Connection failed";
     return {
-      url: PYTHON_ML_BACKEND_URL,
+      url,
+      defaultUrl: DEFAULT_PYTHON_ML_BACKEND_URL,
+      isCustomUrl,
       reachable: false,
       engineReady: false,
+      connectionState: "disconnected",
       verifiedCheckpoints: [],
+      missingCheckpoints: diskMissing,
       latencyMs: null,
-      error: `Python FastAPI ML service offline at ${PYTHON_ML_BACKEND_URL} (${message})`,
+      error: `Python FastAPI ML service offline at ${url} (${message})`,
     };
   }
 }
@@ -830,6 +948,12 @@ const API_DOCS = [
     authOrPolicy: "Read rate limit (120 req/min)",
   },
   {
+    method: "POST",
+    path: "/api/system/backend-url",
+    summary: "Validates, probes, and updates the active Python FastAPI ML inference backend URL at runtime.",
+    authOrPolicy: "Read rate limit (120 req/min), strict URL & health verification",
+  },
+  {
     method: "GET",
     path: "/api/docs",
     summary: "Returns structured documentation of all CelebA AI Studio backend API routes.",
@@ -1087,8 +1211,12 @@ app.get("/api/models", apiReadLimiter, async (_req: Request, res: Response) => {
     reproducibilityConfigYaml,
     mlBackend: {
       url: mlProbe.url,
+      defaultUrl: mlProbe.defaultUrl,
+      isCustomUrl: mlProbe.isCustomUrl,
       online: mlProbe.reachable && mlProbe.engineReady,
+      connectionState: mlProbe.connectionState,
       verifiedCheckpoints: mlProbe.verifiedCheckpoints,
+      missingCheckpoints: mlProbe.missingCheckpoints,
       error: mlProbe.error,
     },
   });
@@ -1236,6 +1364,50 @@ app.get("/api/system/health", apiReadLimiter, async (_req: Request, res: Respons
   });
 });
 
+// Runtime Configurable FastAPI ML Backend URL (with SSRF protection & live /health verification)
+app.post("/api/system/backend-url", apiReadLimiter, async (req: Request, res: Response) => {
+  const body = (req.body ?? {}) as { url?: unknown; reset?: unknown };
+
+  if (body.reset === true || (typeof body.url === "string" && body.url.trim() === "")) {
+    runtimeMlBackendUrl = DEFAULT_PYTHON_ML_BACKEND_URL;
+    const probe = await probePythonMlBackend(runtimeMlBackendUrl);
+    res.json({
+      status: "ok",
+      action: "reset",
+      pythonMlBackend: probe,
+    });
+    return;
+  }
+
+  const validated = validateMlBackendUrl(body.url);
+  if (!validated.ok) {
+    res.status(400).json({
+      status: "error",
+      error_code: "INVALID_BACKEND_URL",
+      message: validated.message,
+    });
+    return;
+  }
+
+  const probe = await probePythonMlBackend(validated.url);
+  if (!probe.reachable) {
+    res.status(502).json({
+      status: "error",
+      error_code: "BACKEND_PROBE_FAILED",
+      message: probe.error || `Unable to verify CelebA FastAPI service at ${validated.url}.`,
+      pythonMlBackend: probe,
+    });
+    return;
+  }
+
+  runtimeMlBackendUrl = validated.url;
+  res.json({
+    status: "ok",
+    action: "updated",
+    pythonMlBackend: probe,
+  });
+});
+
 // Real ML Inference Bridge -> Python FastAPI (PyTorch / XGBoost)
 // Strictly returns 503 if FastAPI ML backend is unavailable; never fabricates predictions.
 app.post("/api/ml/predict", aiInferenceLimiter, async (req: Request, res: Response) => {
@@ -1261,6 +1433,8 @@ app.post("/api/ml/predict", aiInferenceLimiter, async (req: Request, res: Respon
       ? body.architecture.trim()
       : "Vision Transformer";
   const useTta = body.use_tta !== false;
+  const backendUrl = getActiveMlBackendUrl();
+  const t0 = performance.now();
 
   try {
     const form = new FormData();
@@ -1270,7 +1444,7 @@ app.post("/api/ml/predict", aiInferenceLimiter, async (req: Request, res: Respon
     form.append("architecture", architecture);
     form.append("use_tta", String(useTta));
 
-    const upstream = await fetch(`${PYTHON_ML_BACKEND_URL}/api/predict`, {
+    const upstream = await fetch(`${backendUrl}/api/predict`, {
       method: "POST",
       body: form,
       signal: AbortSignal.timeout(15_000),
@@ -1278,33 +1452,41 @@ app.post("/api/ml/predict", aiInferenceLimiter, async (req: Request, res: Respon
 
     const data = (await upstream.json().catch(() => ({}))) as Record<string, unknown>;
     if (!upstream.ok) {
+      const detail =
+        (typeof data.detail === "string" && data.detail) ||
+        (typeof data.message === "string" && data.message) ||
+        `Python FastAPI inference backend returned HTTP ${upstream.status}.`;
+      const isMissingCheckpoint =
+        upstream.status === 503 && detail.toLowerCase().includes("checkpoint");
       res.status(upstream.status).json({
         status: "error",
-        error_code: "ML_INFERENCE_ERROR",
-        message:
-          (typeof data.detail === "string" && data.detail) ||
-          (typeof data.message === "string" && data.message) ||
-          `Python FastAPI inference backend returned HTTP ${upstream.status}.`,
-        backend_url: PYTHON_ML_BACKEND_URL,
+        error_code: isMissingCheckpoint ? "CHECKPOINT_MISSING" : "ML_INFERENCE_ERROR",
+        message: detail,
+        backend_url: backendUrl,
       });
       return;
     }
 
+    const roundTripMs = Number((performance.now() - t0).toFixed(1));
     res.json({
       status: "success",
       ...data,
+      latency_ms: typeof data.latency_ms === "number" ? data.latency_ms : roundTripMs,
+      gateway_roundtrip_ms: roundTripMs,
       retained_on_disk: false,
     });
   } catch (err) {
+    const isTimeout = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
     const reason = err instanceof Error ? err.message : "Connection refused";
-    res.status(503).json({
+    res.status(isTimeout ? 504 : 503).json({
       status: "error",
-      error_code: "ML_BACKEND_UNAVAILABLE",
-      message:
-        `PyTorch/XGBoost FastAPI inference backend is unavailable at ${PYTHON_ML_BACKEND_URL} (${reason}). ` +
-        `Start it with "uvicorn backend.fastapi_app:app --host 0.0.0.0 --port 8001" in a Python environment with requirements.txt installed. ` +
-        `No synthetic or fallback predictions were generated.`,
-      backend_url: PYTHON_ML_BACKEND_URL,
+      error_code: isTimeout ? "ML_INFERENCE_TIMEOUT" : "ML_BACKEND_UNAVAILABLE",
+      message: isTimeout
+        ? `PyTorch FastAPI inference timed out after 15s at ${backendUrl}. No synthetic predictions were generated.`
+        : `PyTorch/XGBoost FastAPI inference backend is unavailable at ${backendUrl} (${reason}). ` +
+          `Start it with "uvicorn backend.fastapi_app:app --host 0.0.0.0 --port 8001" or configure a reachable HTTPS FastAPI URL in System Health & API. ` +
+          `No synthetic or fallback predictions were generated.`,
+      backend_url: backendUrl,
     });
   }
 });
@@ -1329,6 +1511,8 @@ app.post("/api/ml/consensus", aiInferenceLimiter, async (req: Request, res: Resp
   }
 
   const useTta = body.use_tta !== false;
+  const backendUrl = getActiveMlBackendUrl();
+  const t0 = performance.now();
 
   try {
     const form = new FormData();
@@ -1337,7 +1521,7 @@ app.post("/api/ml/consensus", aiInferenceLimiter, async (req: Request, res: Resp
     form.append("file", blob, "upload.jpg");
     form.append("use_tta", String(useTta));
 
-    const upstream = await fetch(`${PYTHON_ML_BACKEND_URL}/api/predict/consensus`, {
+    const upstream = await fetch(`${backendUrl}/api/predict/consensus`, {
       method: "POST",
       body: form,
       signal: AbortSignal.timeout(25_000),
@@ -1345,33 +1529,41 @@ app.post("/api/ml/consensus", aiInferenceLimiter, async (req: Request, res: Resp
 
     const data = (await upstream.json().catch(() => ({}))) as Record<string, unknown>;
     if (!upstream.ok) {
+      const detail =
+        (typeof data.detail === "string" && data.detail) ||
+        (typeof data.message === "string" && data.message) ||
+        `Python FastAPI consensus endpoint returned HTTP ${upstream.status}.`;
+      const isMissingCheckpoint =
+        upstream.status === 503 && detail.toLowerCase().includes("checkpoint");
       res.status(upstream.status).json({
         status: "error",
-        error_code: "ML_INFERENCE_ERROR",
-        message:
-          (typeof data.detail === "string" && data.detail) ||
-          (typeof data.message === "string" && data.message) ||
-          `Python FastAPI consensus endpoint returned HTTP ${upstream.status}.`,
-        backend_url: PYTHON_ML_BACKEND_URL,
+        error_code: isMissingCheckpoint ? "CHECKPOINT_MISSING" : "ML_INFERENCE_ERROR",
+        message: detail,
+        backend_url: backendUrl,
       });
       return;
     }
 
+    const roundTripMs = Number((performance.now() - t0).toFixed(1));
     res.json({
       status: "success",
       ...data,
+      latency_ms: typeof data.latency_ms === "number" ? data.latency_ms : roundTripMs,
+      gateway_roundtrip_ms: roundTripMs,
       retained_on_disk: false,
     });
   } catch (err) {
+    const isTimeout = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
     const reason = err instanceof Error ? err.message : "Connection refused";
-    res.status(503).json({
+    res.status(isTimeout ? 504 : 503).json({
       status: "error",
-      error_code: "ML_BACKEND_UNAVAILABLE",
-      message:
-        `PyTorch/XGBoost FastAPI inference backend is unavailable at ${PYTHON_ML_BACKEND_URL} (${reason}). ` +
-        `Start it with "uvicorn backend.fastapi_app:app --host 0.0.0.0 --port 8001" in a Python environment with requirements.txt installed. ` +
-        `No synthetic consensus predictions were generated.`,
-      backend_url: PYTHON_ML_BACKEND_URL,
+      error_code: isTimeout ? "ML_INFERENCE_TIMEOUT" : "ML_BACKEND_UNAVAILABLE",
+      message: isTimeout
+        ? `PyTorch FastAPI consensus timed out after 25s at ${backendUrl}. No synthetic predictions were generated.`
+        : `PyTorch/XGBoost FastAPI inference backend is unavailable at ${backendUrl} (${reason}). ` +
+          `Start it with "uvicorn backend.fastapi_app:app --host 0.0.0.0 --port 8001" or configure a reachable HTTPS FastAPI URL in System Health & API. ` +
+          `No synthetic consensus predictions were generated.`,
+      backend_url: backendUrl,
     });
   }
 });
@@ -1758,7 +1950,7 @@ async function startServer(): Promise<void> {
     console.log("  CELEBA AI — FACE INTELLIGENCE STUDIO");
     console.log(`  Listening on:          http://${HOST}:${PORT}`);
     console.log(`  Mode:                  ${isProd ? "production" : "development (Vite)"}`);
-    console.log(`  Python ML Backend URL: ${PYTHON_ML_BACKEND_URL}`);
+    console.log(`  Python ML Backend URL: ${getActiveMlBackendUrl()}`);
     console.log(`  Gemini API Key:        ${process.env.GEMINI_API_KEY ? "configured" : "not set"}`);
     console.log("======================================================================");
   });

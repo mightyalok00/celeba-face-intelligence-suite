@@ -1,4 +1,5 @@
 import {
+  memo,
   useEffect,
   useState,
   useMemo,
@@ -7,6 +8,7 @@ import {
   type DragEvent,
   type ChangeEvent,
   type MouseEvent,
+  type TouchEvent,
 } from "react";
 import {
   Search,
@@ -64,6 +66,7 @@ import { computeImageFingerprint } from "../lib/imageHashWorker";
 
 interface GooglePhotosGalleryProps {
   samples: GallerySample[];
+  isOffline?: boolean;
   onSelectForAnalysis?: (imageUrl: string) => void;
 }
 
@@ -102,6 +105,7 @@ type MimeFilter = "all" | "image/jpeg" | "image/png" | "image/webp" | "other";
 const RECENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const INITIAL_WINDOW_SIZE = 36;
 const WINDOW_STEP = 36;
+const MAX_LOCAL_FILE_BYTES = 25 * 1024 * 1024;
 
 function inferMimeFromFilename(filename: string, url: string): string {
   const lower = `${filename} ${url}`.toLowerCase();
@@ -119,7 +123,182 @@ function shortMimeLabel(mime: string): string {
   return mime.replace("image/", "").toUpperCase() || "IMG";
 }
 
-export function GooglePhotosGallery({ samples, onSelectForAnalysis }: GooglePhotosGalleryProps) {
+interface PhotoGridCardProps {
+  photo: GalleryPhotoItem;
+  isSelected: boolean;
+  isExactDup: boolean;
+  isSimilar: boolean;
+  bestDistance: number | null;
+  isOffline: boolean;
+  onOpen: (id: string) => void;
+  onToggleSelect: (id: string, e: MouseEvent) => void;
+  onEdit: (photo: GalleryPhotoItem) => void;
+  onToggleFavorite: (photo: GalleryPhotoItem, e: MouseEvent) => void;
+  onSelectForAnalysis?: (imageUrl: string) => void;
+}
+
+const PhotoGridCard = memo(function PhotoGridCard({
+  photo,
+  isSelected,
+  isExactDup,
+  isSimilar,
+  bestDistance,
+  isOffline,
+  onOpen,
+  onToggleSelect,
+  onEdit,
+  onToggleFavorite,
+  onSelectForAnalysis,
+}: PhotoGridCardProps) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label={`View ${photo.filename}`}
+      onClick={() => onOpen(photo.id)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen(photo.id);
+        }
+      }}
+      className={`cv-auto group relative rounded-xl border bg-slate-950/85 overflow-hidden cursor-pointer transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-sky-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
+        isSelected
+          ? "border-sky-400 ring-2 ring-sky-400/50 scale-[0.98]"
+          : "border-white/10 hover:border-sky-400/50"
+      }`}
+    >
+      <div className="relative aspect-square w-full bg-slate-900 overflow-hidden">
+        <img
+          src={photo.url}
+          alt={photo.filename}
+          loading="lazy"
+          decoding="async"
+          referrerPolicy="no-referrer"
+          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+        />
+
+        {/* Persistent top-left indicator badges (selection / duplicate / favorite) */}
+        <div className="absolute top-2 left-2 right-2 flex items-center justify-between pointer-events-none">
+          <div className="flex items-center gap-1">
+            {isExactDup && (
+              <span className="px-1.5 py-0.5 rounded bg-amber-500/90 text-slate-950 text-[10px] font-bold tracking-tight shadow">
+                Exact Dup
+              </span>
+            )}
+            {isSimilar && bestDistance !== null && (
+              <span className="px-1.5 py-0.5 rounded bg-indigo-500/90 text-white text-[10px] font-semibold tracking-tight shadow">
+                Similar · d={bestDistance}
+              </span>
+            )}
+            {photo.isScreenshot && !isExactDup && !isSimilar && (
+              <span className="px-1.5 py-0.5 rounded bg-slate-900/85 border border-white/15 text-slate-200 text-[10px] font-medium">
+                Screen
+              </span>
+            )}
+          </div>
+          {photo.isFavorite && (
+            <span className="p-1 rounded-md bg-slate-950/75 text-rose-400 group-hover:opacity-0 transition-opacity">
+              <Heart className="w-3.5 h-3.5 fill-rose-400" />
+            </span>
+          )}
+        </div>
+
+        {/* Interactive hover overlay */}
+        <div
+          className={`absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/20 to-slate-950/40 transition-opacity flex flex-col justify-between p-2.5 ${
+            isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              aria-label={isSelected ? `Deselect ${photo.filename}` : `Select ${photo.filename}`}
+              onClick={(e) => onToggleSelect(photo.id, e)}
+              className="p-1.5 rounded-md bg-slate-900/85 text-slate-200 hover:text-sky-300 transition-colors"
+              title={isSelected ? "Deselect" : "Select photo"}
+            >
+              {isSelected ? (
+                <CheckSquare className="w-4 h-4 text-sky-400" />
+              ) : (
+                <Square className="w-4 h-4" />
+              )}
+            </button>
+
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                aria-label={`Edit ${photo.filename}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit(photo);
+                }}
+                className="p-1.5 rounded-md bg-slate-900/85 text-sky-400 hover:text-sky-300 transition-colors"
+                title="Edit Photo (Non-Destructive · Offline Ready)"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                aria-label={photo.isFavorite ? `Unfavorite ${photo.filename}` : `Favorite ${photo.filename}`}
+                onClick={(e) => onToggleFavorite(photo, e)}
+                className="p-1.5 rounded-md bg-slate-900/85 text-slate-200 transition-colors"
+                title={photo.isFavorite ? "Remove Favorite" : "Add Favorite"}
+              >
+                <Heart
+                  className={`w-3.5 h-3.5 ${
+                    photo.isFavorite
+                      ? "fill-rose-400 text-rose-400"
+                      : "text-slate-300 hover:text-rose-400"
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <div className="text-[11px] font-mono font-medium text-slate-100 truncate">
+              {photo.filename}
+            </div>
+            <div className="flex items-center justify-between gap-1 text-[10px] text-slate-300 font-mono">
+              <span className="truncate">
+                {photo.width && photo.height
+                  ? `${photo.width}×${photo.height}`
+                  : shortMimeLabel(photo.mimeType)}
+                {photo.sizeBytes ? ` · ${formatBytes(photo.sizeBytes)}` : ""}
+              </span>
+              {onSelectForAnalysis && (
+                <button
+                  type="button"
+                  disabled={isOffline}
+                  aria-label={`Analyze ${photo.filename}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!isOffline) onSelectForAnalysis(photo.url);
+                  }}
+                  className="p-1 rounded bg-sky-500 hover:bg-sky-400 disabled:bg-slate-700 disabled:text-slate-400 disabled:cursor-not-allowed text-slate-950 shrink-0"
+                  title={
+                    isOffline
+                      ? "AI backend analysis disabled while offline"
+                      : "Send to AI Attribute Analysis"
+                  }
+                >
+                  <Sparkles className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+export function GooglePhotosGallery({
+  samples,
+  isOffline = false,
+  onSelectForAnalysis,
+}: GooglePhotosGalleryProps) {
   const [storedPhotos, setStoredPhotos] = useState<GalleryPhotoItem[]>([]);
   const [preferences, setPreferences] = useState<GalleryPreferences>(DEFAULT_PREFERENCES);
   const [isHydratingVault, setIsHydratingVault] = useState(true);
@@ -161,6 +340,17 @@ export function GooglePhotosGallery({ samples, onSelectForAnalysis }: GooglePhot
   const fileInputRef = useRef<HTMLInputElement>(null);
   const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
   const managedObjectUrlsRef = useRef<Map<string, string>>(new Map());
+  const downloadTimersRef = useRef<number[]>([]);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Clean up any scheduled bulk-download timers on unmount
+  useEffect(() => {
+    const timers = downloadTimersRef.current;
+    return () => {
+      timers.forEach((id) => window.clearTimeout(id));
+      timers.length = 0;
+    };
+  }, []);
 
   // Hydrate persisted IndexedDB photos & preferences once on mount
   useEffect(() => {
@@ -535,16 +725,22 @@ export function GooglePhotosGallery({ samples, onSelectForAnalysis }: GooglePhot
   // Process & persist uploaded files using Web Worker SHA-256 + dHash + IndexedDB
   const processFiles = useCallback(
     async (fileList: FileList) => {
-      const validFiles = Array.from(fileList).filter((f) => f.type.startsWith("image/"));
-      const skippedCount = fileList.length - validFiles.length;
-      if (skippedCount > 0 && validFiles.length === 0) {
+      const allIncoming = Array.from(fileList);
+      const imageFiles = allIncoming.filter((f) => f.type.startsWith("image/"));
+      const validFiles = imageFiles.filter((f) => f.size > 0 && f.size <= MAX_LOCAL_FILE_BYTES);
+      const oversizedCount = imageFiles.length - validFiles.length;
+      const skippedCount = allIncoming.length - imageFiles.length;
+
+      if (validFiles.length === 0) {
         setStorageBanner({
           tone: "error",
-          message: "Only image files (JPEG, PNG, WebP) can be imported into the local photo vault.",
+          message:
+            oversizedCount > 0
+              ? `Skipped ${oversizedCount} image(s) exceeding the 25 MB local vault limit.`
+              : "Only valid image files (JPEG, PNG, WebP) can be imported into the local photo vault.",
         });
         return;
       }
-      if (validFiles.length === 0) return;
 
       setIsProcessingUploads(true);
       const existingNames = new Set(allPhotos.map((p) => p.filename));
@@ -751,21 +947,24 @@ export function GooglePhotosGallery({ samples, onSelectForAnalysis }: GooglePhot
   };
 
   // Favorites toggle (persisted to IndexedDB or preferences)
-  const toggleFavorite = (photo: GalleryPhotoItem, e: MouseEvent) => {
-    e.stopPropagation();
-    const nextFav = !photo.isFavorite;
-    if (photo.isUserUpload) {
-      setStoredPhotos((prev) =>
-        prev.map((p) => (p.id === photo.id ? { ...p, isFavorite: nextFav } : p))
-      );
-      void updatePhotoMetadata(photo.id, { isFavorite: nextFav });
-    } else {
-      updatePreferences((prev) => ({
-        ...prev,
-        sampleFavorites: { ...prev.sampleFavorites, [photo.id]: nextFav },
-      }));
-    }
-  };
+  const toggleFavorite = useCallback(
+    (photo: GalleryPhotoItem, e: MouseEvent) => {
+      e.stopPropagation();
+      const nextFav = !photo.isFavorite;
+      if (photo.isUserUpload) {
+        setStoredPhotos((prev) =>
+          prev.map((p) => (p.id === photo.id ? { ...p, isFavorite: nextFav } : p))
+        );
+        void updatePhotoMetadata(photo.id, { isFavorite: nextFav });
+      } else {
+        updatePreferences((prev) => ({
+          ...prev,
+          sampleFavorites: { ...prev.sampleFavorites, [photo.id]: nextFav },
+        }));
+      }
+    },
+    [updatePreferences]
+  );
 
   // Selection helpers
   const toggleSelectAll = () => {
@@ -776,7 +975,7 @@ export function GooglePhotosGallery({ samples, onSelectForAnalysis }: GooglePhot
     }
   };
 
-  const toggleSelectOne = (id: string, e: MouseEvent) => {
+  const toggleSelectOne = useCallback((id: string, e: MouseEvent) => {
     e.stopPropagation();
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -784,7 +983,22 @@ export function GooglePhotosGallery({ samples, onSelectForAnalysis }: GooglePhot
       else next.add(id);
       return next;
     });
-  };
+  }, []);
+
+  const handleOpenPhoto = useCallback(
+    (id: string) => {
+      const idx = photoIndexById.get(id);
+      if (idx !== undefined) {
+        setActivePhotoIndex(idx);
+        setZoomLevel(1);
+      }
+    },
+    [photoIndexById]
+  );
+
+  const handleEditPhoto = useCallback((photo: GalleryPhotoItem) => {
+    setEditingPhoto(photo);
+  }, []);
 
   // Create new custom User Album
   const handleCreateUserAlbum = () => {
@@ -839,11 +1053,11 @@ export function GooglePhotosGallery({ samples, onSelectForAnalysis }: GooglePhot
     setSelectedIds(new Set());
   };
 
-  // Bulk Download selected images
+  // Bulk Download selected images (tracked timers cleaned up on unmount)
   const handleBulkDownload = () => {
     const selectedItems = allPhotos.filter((p) => selectedIds.has(p.id));
     selectedItems.forEach((item, idx) => {
-      setTimeout(() => {
+      const timerId = window.setTimeout(() => {
         const link = document.createElement("a");
         link.href = item.url;
         link.download = item.filename;
@@ -851,6 +1065,7 @@ export function GooglePhotosGallery({ samples, onSelectForAnalysis }: GooglePhot
         link.click();
         document.body.removeChild(link);
       }, idx * 140);
+      downloadTimersRef.current.push(timerId);
     });
   };
 
@@ -903,8 +1118,32 @@ export function GooglePhotosGallery({ samples, onSelectForAnalysis }: GooglePhot
     return { localCount, corpusCount };
   }, [allPhotos, selectedIds]);
 
+  const handleLightboxTouchStart = (e: TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length !== 1 || zoomLevel > 1) return;
+    touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  };
+
+  const handleLightboxTouchEnd = (e: TouchEvent<HTMLDivElement>) => {
+    const start = touchStartRef.current;
+    touchStartRef.current = null;
+    if (!start || e.changedTouches.length !== 1 || zoomLevel > 1) return;
+    const dx = e.changedTouches[0].clientX - start.x;
+    const dy = e.changedTouches[0].clientY - start.y;
+
+    if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy)) {
+      if (dx < 0 && activePhotoIndex !== null && activePhotoIndex < filteredPhotos.length - 1) {
+        setActivePhotoIndex(activePhotoIndex + 1);
+        setZoomLevel(1);
+      } else if (dx > 0 && activePhotoIndex !== null && activePhotoIndex > 0) {
+        setActivePhotoIndex(activePhotoIndex - 1);
+        setZoomLevel(1);
+      }
+    } else if (dy > 90 && Math.abs(dy) > Math.abs(dx)) {
+      setActivePhotoIndex(null);
+    }
+  };
+
   const renderPhotoCard = (photo: GalleryPhotoItem) => {
-    const isSelected = selectedIds.has(photo.id);
     const isExactDup = duplicateAnalysis.exactPhotoIds.has(photo.id);
     const similarMatches = duplicateAnalysis.similarMatchesByPhotoId.get(photo.id);
     const isSimilar = !isExactDup && Boolean(similarMatches && similarMatches.length > 0);
@@ -913,133 +1152,20 @@ export function GooglePhotosGallery({ samples, onSelectForAnalysis }: GooglePhot
       : null;
 
     return (
-      <div
+      <PhotoGridCard
         key={photo.id}
-        onClick={() => {
-          const idx = photoIndexById.get(photo.id);
-          if (idx !== undefined) {
-            setActivePhotoIndex(idx);
-            setZoomLevel(1);
-          }
-        }}
-        className={`group relative rounded-xl border bg-slate-950/85 overflow-hidden cursor-pointer transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-sky-500/10 ${
-          isSelected
-            ? "border-sky-400 ring-2 ring-sky-400/50 scale-[0.98]"
-            : "border-white/10 hover:border-sky-400/50"
-        }`}
-      >
-        <div className="relative aspect-square w-full bg-slate-900 overflow-hidden">
-          <img
-            src={photo.url}
-            alt={photo.filename}
-            loading="lazy"
-            decoding="async"
-            referrerPolicy="no-referrer"
-            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-          />
-
-          {/* Persistent top-left indicator badges (selection / duplicate / favorite) */}
-          <div className="absolute top-2 left-2 right-2 flex items-center justify-between pointer-events-none">
-            <div className="flex items-center gap-1">
-              {isExactDup && (
-                <span className="px-1.5 py-0.5 rounded bg-amber-500/90 text-slate-950 text-[10px] font-bold tracking-tight shadow">
-                  Exact Dup
-                </span>
-              )}
-              {isSimilar && bestDistance !== null && (
-                <span className="px-1.5 py-0.5 rounded bg-indigo-500/90 text-white text-[10px] font-semibold tracking-tight shadow">
-                  Similar · d={bestDistance}
-                </span>
-              )}
-              {photo.isScreenshot && !isExactDup && !isSimilar && (
-                <span className="px-1.5 py-0.5 rounded bg-slate-900/85 border border-white/15 text-slate-200 text-[10px] font-medium">
-                  Screen
-                </span>
-              )}
-            </div>
-            {photo.isFavorite && (
-              <span className="p-1 rounded-md bg-slate-950/75 text-rose-400 group-hover:opacity-0 transition-opacity">
-                <Heart className="w-3.5 h-3.5 fill-rose-400" />
-              </span>
-            )}
-          </div>
-
-          {/* Interactive hover overlay */}
-          <div
-            className={`absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/20 to-slate-950/40 transition-opacity flex flex-col justify-between p-2.5 ${
-              isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <button
-                type="button"
-                onClick={(e) => toggleSelectOne(photo.id, e)}
-                className="p-1 rounded-md bg-slate-900/85 text-slate-200 hover:text-sky-300 transition-colors"
-                title={isSelected ? "Deselect" : "Select photo"}
-              >
-                {isSelected ? (
-                  <CheckSquare className="w-4 h-4 text-sky-400" />
-                ) : (
-                  <Square className="w-4 h-4" />
-                )}
-              </button>
-
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setEditingPhoto(photo);
-                  }}
-                  className="p-1 rounded-md bg-slate-900/85 text-sky-400 hover:text-sky-300 transition-colors"
-                  title="Edit Photo (Non-Destructive)"
-                >
-                  <Edit3 className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => toggleFavorite(photo, e)}
-                  className="p-1 rounded-md bg-slate-900/85 text-slate-200 transition-colors"
-                  title={photo.isFavorite ? "Remove Favorite" : "Add Favorite"}
-                >
-                  <Heart
-                    className={`w-3.5 h-3.5 ${
-                      photo.isFavorite
-                        ? "fill-rose-400 text-rose-400"
-                        : "text-slate-300 hover:text-rose-400"
-                    }`}
-                  />
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <div className="text-[11px] font-mono font-medium text-slate-100 truncate">
-                {photo.filename}
-              </div>
-              <div className="flex items-center justify-between gap-1 text-[10px] text-slate-300 font-mono">
-                <span className="truncate">
-                  {photo.width && photo.height ? `${photo.width}×${photo.height}` : shortMimeLabel(photo.mimeType)}
-                  {photo.sizeBytes ? ` · ${formatBytes(photo.sizeBytes)}` : ""}
-                </span>
-                {onSelectForAnalysis && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelectForAnalysis(photo.url);
-                    }}
-                    className="p-1 rounded bg-sky-500 hover:bg-sky-400 text-slate-950 shrink-0"
-                    title="Send to AI Attribute Analysis"
-                  >
-                    <Sparkles className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+        photo={photo}
+        isSelected={selectedIds.has(photo.id)}
+        isExactDup={isExactDup}
+        isSimilar={isSimilar}
+        bestDistance={bestDistance}
+        isOffline={isOffline}
+        onOpen={handleOpenPhoto}
+        onToggleSelect={toggleSelectOne}
+        onEdit={handleEditPhoto}
+        onToggleFavorite={toggleFavorite}
+        onSelectForAnalysis={onSelectForAnalysis}
+      />
     );
   };
 
@@ -1681,11 +1807,16 @@ export function GooglePhotosGallery({ samples, onSelectForAnalysis }: GooglePhot
         </div>
       )}
 
-      {/* Full-Screen Lightbox Viewer */}
+      {/* Full-Screen Lightbox Viewer with Mobile Touch Swipe Gestures */}
       {activePhoto && (
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Viewing ${activePhoto.filename}`}
           className="fixed inset-0 z-50 bg-black/95 backdrop-blur-xl flex flex-col items-center justify-between p-4 sm:p-8 animate-fade-in"
           onClick={() => setActivePhotoIndex(null)}
+          onTouchStart={handleLightboxTouchStart}
+          onTouchEnd={handleLightboxTouchEnd}
         >
           <div
             className="w-full max-w-6xl flex flex-wrap items-center justify-between gap-3 text-slate-300"

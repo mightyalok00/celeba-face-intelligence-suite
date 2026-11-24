@@ -334,6 +334,21 @@ export function hammingDistanceHex(hexA: string, hexB: string): number {
   return dist;
 }
 
+function popcount32(v: number): number {
+  let x = v >>> 0;
+  x = x - ((x >>> 1) & 0x55555555);
+  x = (x & 0x33333333) + ((x >>> 2) & 0x33333333);
+  return (((x + (x >>> 4)) & 0x0f0f0f0f) * 0x01010101) >>> 24;
+}
+
+function parseHex64(hex: string): [number, number] | null {
+  if (!hex || hex.length !== 16) return null;
+  const hi = parseInt(hex.slice(0, 8), 16);
+  const lo = parseInt(hex.slice(8, 16), 16);
+  if (Number.isNaN(hi) || Number.isNaN(lo)) return null;
+  return [hi >>> 0, lo >>> 0];
+}
+
 export function findDuplicateAnalysis(
   items: HashablePhotoLike[],
   maxHammingDistance = 10
@@ -363,27 +378,45 @@ export function findDuplicateAnalysis(
     }
   });
 
-  // 2. Visually similar perceptual dHash pairs (excluding pairs already sharing the exact SHA-256)
-  const hashed = items.filter((i): i is HashablePhotoLike & { dhash: string } => Boolean(i.dhash));
-  let similarPairCount = 0;
+  // 2. Visually similar perceptual dHash pairs using pre-decoded 32-bit integers + SWAR popcount
+  const hashed: Array<{ id: string; sha256: string | null; hi: number; lo: number }> = [];
+  for (const item of items) {
+    if (!item.dhash) continue;
+    const parsed = parseHex64(item.dhash);
+    if (!parsed) continue;
+    hashed.push({
+      id: item.id,
+      sha256: item.sha256 ?? null,
+      hi: parsed[0],
+      lo: parsed[1],
+    });
+  }
 
-  for (let i = 0; i < hashed.length; i += 1) {
+  let similarPairCount = 0;
+  const len = hashed.length;
+
+  for (let i = 0; i < len; i += 1) {
     const a = hashed[i];
-    for (let j = i + 1; j < hashed.length; j += 1) {
+    const aHi = a.hi;
+    const aLo = a.lo;
+    const aSha = a.sha256;
+    for (let j = i + 1; j < len; j += 1) {
       const b = hashed[j];
-      if (a.sha256 && b.sha256 && a.sha256 === b.sha256) continue;
-      const dist = hammingDistanceHex(a.dhash, b.dhash);
+      if (aSha && b.sha256 && aSha === b.sha256) continue;
+      const distHi = popcount32(aHi ^ b.hi);
+      if (distHi > maxHammingDistance) continue;
+      const dist = distHi + popcount32(aLo ^ b.lo);
       if (dist <= maxHammingDistance) {
         similarPairCount += 1;
         similarPhotoIds.add(a.id);
         similarPhotoIds.add(b.id);
-        const listA = similarMatchesByPhotoId.get(a.id) ?? [];
-        listA.push({ id: b.id, distance: dist });
-        similarMatchesByPhotoId.set(a.id, listA);
+        const listA = similarMatchesByPhotoId.get(a.id);
+        if (listA) listA.push({ id: b.id, distance: dist });
+        else similarMatchesByPhotoId.set(a.id, [{ id: b.id, distance: dist }]);
 
-        const listB = similarMatchesByPhotoId.get(b.id) ?? [];
-        listB.push({ id: a.id, distance: dist });
-        similarMatchesByPhotoId.set(b.id, listB);
+        const listB = similarMatchesByPhotoId.get(b.id);
+        if (listB) listB.push({ id: a.id, distance: dist });
+        else similarMatchesByPhotoId.set(b.id, [{ id: a.id, distance: dist }]);
       }
     }
   }

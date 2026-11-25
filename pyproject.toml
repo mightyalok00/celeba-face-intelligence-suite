@@ -28,6 +28,7 @@ norecursedirs = [
     "__pycache__"
 ]
 addopts = "-v --strict-markers"
+markers = ["live_mysql: uses the configured MySQL service"]
 
 [tool.ruff]
 line-length = 100

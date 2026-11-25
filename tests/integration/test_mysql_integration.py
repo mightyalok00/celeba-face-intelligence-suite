@@ -51,6 +51,7 @@ def test_offline_mode_graceful_handling():
         assert err is not None
 
 
+@pytest.mark.live_mysql
 def test_live_mysql_roundtrip_when_service_available():
     """
     Verify genuine live MySQL connection and query round-trip without mocks

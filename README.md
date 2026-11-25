@@ -1,6 +1,66 @@
-# CelebA Face Attribute Classification System
+# CelebA Face Intelligence Suite
 
-An end-to-end computer vision and multimodal intelligence platform that classifies facial attributes on the **CelebA (CelebFaces Attributes)** dataset. The system integrates a **Google AI Studio Multimodal Reasoning App** (`google-generativeai` / Gemini 1.5 Flash), local PyTorch deep neural networks (**ANN, Deeper Residual Conv2D CNN, Spatial BiLSTM, Vision Transformer**), gradient boosted decision trees (**XGBoost**), **MySQL** relational database (`celeba_db`) with connection pooling, and **5-Fold Stratified Cross-Validation with 5-View Test-Time Augmentation (TTA)**.
+**Deep Learning · Multimodal AI · Data Engineering · Full-Stack ML**
+
+[![CI](https://github.com/mightyalok00/celeba-face-intelligence-suite/actions/workflows/ci.yml/badge.svg)](https://github.com/mightyalok00/celeba-face-intelligence-suite/actions)
+[![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+An end-to-end research and engineering platform connecting facial attribute classification, experimental model comparison, multimodal inference and interactive photo exploration.
+
+> Research prototype: historical benchmarks and CI smoke tests do not establish production accuracy.
+
+[Architecture](docs/ARCHITECTURE.md) · [Database design](docs/EER_DIAGRAM.md) · [Reproducibility](reproducibility/README.md) · [Model cards](reports/model_cards/) · [CI runs](https://github.com/mightyalok00/celeba-face-intelligence-suite/actions)
+
+## Engineering highlights
+
+| Layer | Capabilities |
+| --- | --- |
+| Deep learning | ANN, residual CNN, spatial BiLSTM, Vision Transformer |
+| Classical ML | Logistic regression, ExtraTrees, XGBoost |
+| Hybrid AI | Local checkpoints, Gemini and ensemble inference |
+| Data engineering | MySQL, connection pooling, parameterized queries, CSV fallback |
+| Evaluation | Identity-aware splits, cross-validation, benchmark provenance |
+| Application | React, TypeScript, Vite, Express and Python services |
+| Integrations | MySQL and Google Photos MCP adapters |
+
+## Architecture at a glance
+
+```mermaid
+flowchart LR
+    UI[React / TypeScript] --> API[Express API]
+    API --> ML[Python inference]
+    API --> G[Gemini]
+    D[CelebA data] --> P[Training pipeline]
+    P --> M[Model checkpoints]
+    M --> ML
+    P --> R[Evaluation reports]
+    ML --> DB[(MySQL / CSV)]
+```
+
+Conceptual architecture; consult the architecture guide for implementation details.
+
+## Quick start
+
+```powershell
+git clone https://github.com/mightyalok00/celeba-face-intelligence-suite.git
+cd celeba-face-intelligence-suite
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+```
+
+With Bun installed:
+
+```bash
+bun install --frozen-lockfile
+bun run dev
+```
+
+Configure environment variables and model checkpoints before inference. See the detailed setup below.
+
+## Dataset and responsible use
+
+The original CelebA dataset contains 202,599 images and 40 binary attribute annotations; this is not a claim that all images are bundled or evaluated here. Obtain data from the [official dataset page](https://mmlab.ie.cuhk.edu.hk/projects/CelebA.html) under its applicable terms. Use authorized images, protect biometric data and avoid consequential decisions based on uncertain facial predictions.
 
 ## Validation status
 
@@ -122,7 +182,7 @@ GitHub Actions runs static analysis, security checks, tests and training smoke c
 │       ├── __init__.py                       # Preprocessing package marker
 │       └── image_processor.ipynb             # Resizing, normalization & standardization
 │
-├── tests\                                    # Automated test suite (88% coverage)
+├── tests\                                    # Automated test suite (see audited coverage below)
 │   ├── conftest.py                           # Pytest fixtures and mock isolation
 │   ├── unit\                                 # Unit tests for architectures, pool, metrics
 │   ├── integration\                          # Integration tests for MySQL, Streamlit, models
@@ -398,7 +458,7 @@ All Python pipelines and modules have corresponding interactive, fully-commented
 
 ## Comparative Benchmark Evaluation Results
 
-Evaluated on unseen standardized CelebA identity-disjoint holdout test data for the `Smiling` attribute with genuine trained PyTorch weights and out-of-fold blending:
+Historical reported results for the `Smiling` attribute. These measurements have not been independently reproduced; see the limitations below.
 
 | Model Configuration | Strategy | Test Loss | Accuracy | Precision | Recall | F1-Score | Status |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |

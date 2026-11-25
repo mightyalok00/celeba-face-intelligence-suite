@@ -18,11 +18,13 @@ if str(PROJECT_ROOT) not in sys.path:
 
 
 @pytest.fixture(autouse=True)
-def clean_test_environment(monkeypatch):
+def clean_test_environment(monkeypatch, request):
     """
     Ensure standard environment variables for tests without leaking secrets.
     Sets mock database credentials to verify environment-driven connectivity.
     """
+    if request.node.get_closest_marker('live_mysql'):
+        return
     monkeypatch.setenv("MYSQL_HOST", "127.0.0.1")
     monkeypatch.setenv("MYSQL_USER", "test_user")
     monkeypatch.setenv("MYSQL_PASSWORD", "test_pass_secure")

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, Camera, CameraOff, Cpu, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
 import { GlassCard } from "../components/GlassCard";
 import type {
@@ -19,10 +19,16 @@ const MODEL_OPTIONS = [
 interface CameraAnalysisPageProps {
   health?: SystemHealthResponse | null;
   models?: ModelsResponse | null;
+  isOffline?: boolean;
   onNavigate?: (page: PageId) => void;
 }
 
-export function CameraAnalysisPage({ health, models, onNavigate }: CameraAnalysisPageProps) {
+export function CameraAnalysisPage({
+  health,
+  models,
+  isOffline = false,
+  onNavigate,
+}: CameraAnalysisPageProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -34,12 +40,14 @@ export function CameraAnalysisPage({ health, models, onNavigate }: CameraAnalysi
   const [selectedArchitecture, setSelectedArchitecture] = useState("Vision Transformer");
 
   const mlBackend = health?.services.pythonMlBackend;
-  const backendConnected = Boolean(mlBackend?.reachable && mlBackend?.engineReady);
-  const liveVerifiedSet = new Set(
-    mlBackend?.verifiedCheckpoints ?? models?.mlBackend.verifiedCheckpoints ?? []
+  const backendConnected = Boolean(!isOffline && mlBackend?.reachable && mlBackend?.engineReady);
+  const liveVerifiedSet = useMemo(
+    () => new Set(mlBackend?.verifiedCheckpoints ?? models?.mlBackend.verifiedCheckpoints ?? []),
+    [mlBackend?.verifiedCheckpoints, models?.mlBackend.verifiedCheckpoints]
   );
-  const diskCheckpointMap = new Map(
-    (models?.checkpoints ?? health?.checkpoints ?? []).map((c) => [c.architecture, c])
+  const diskCheckpointMap = useMemo(
+    () => new Map((models?.checkpoints ?? health?.checkpoints ?? []).map((c) => [c.architecture, c])),
+    [models?.checkpoints, health?.checkpoints]
   );
   const selectedModelReady = backendConnected && liveVerifiedSet.has(selectedArchitecture);
 
@@ -348,12 +356,19 @@ export function CameraAnalysisPage({ health, models, onNavigate }: CameraAnalysi
 
             <button
               type="button"
-              disabled={!capturedFrame || geminiLoading}
+              disabled={isOffline || !capturedFrame || geminiLoading}
               onClick={runGeminiSnapshot}
-              className="px-4 py-2 min-h-[40px] rounded-lg bg-sky-500 hover:bg-sky-400 disabled:opacity-40 text-xs font-semibold text-slate-950 inline-flex items-center justify-center gap-1.5"
+              title={
+                isOffline
+                  ? "Reconnect to the internet to run Gemini multimodal analysis"
+                  : "Analyze captured frame with Gemini"
+              }
+              className="px-4 py-2 min-h-[40px] rounded-lg bg-sky-500 hover:bg-sky-400 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold text-slate-950 inline-flex items-center justify-center gap-1.5"
             >
               <Sparkles className="w-4 h-4" />
-              <span>{geminiLoading ? "Analyzing..." : "Gemini Analyze"}</span>
+              <span>
+                {isOffline ? "Offline (AI Paused)" : geminiLoading ? "Analyzing..." : "Gemini Analyze"}
+              </span>
             </button>
           </div>
 

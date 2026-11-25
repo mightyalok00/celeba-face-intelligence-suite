@@ -1907,10 +1907,12 @@ app.post("/api/gemini/chat/stream", aiInferenceLimiter, async (req: Request, res
 });
 
 // Static Repository Assets (Figures, Model Cards, Docs, Legacy UI)
-app.use("/reports", express.static(path.join(PROJECT_ROOT, "reports")));
-app.use("/models", express.static(path.join(PROJECT_ROOT, "models")));
-app.use("/docs", express.static(path.join(PROJECT_ROOT, "docs")));
-app.use("/legacy", express.static(path.join(PROJECT_ROOT, "frontend")));
+// Disable directory redirects & index lookup so SPA routes (/models, /reports) fall through cleanly with 200 OK
+const staticAssetOptions = { redirect: false, index: false, maxAge: "1h" };
+app.use("/reports", express.static(path.join(PROJECT_ROOT, "reports"), staticAssetOptions));
+app.use("/models", express.static(path.join(PROJECT_ROOT, "models"), staticAssetOptions));
+app.use("/docs", express.static(path.join(PROJECT_ROOT, "docs"), staticAssetOptions));
+app.use("/legacy", express.static(path.join(PROJECT_ROOT, "frontend"), staticAssetOptions));
 
 // API 404 handler
 app.use("/api", (_req: Request, res: Response) => {
@@ -1936,7 +1938,7 @@ async function startServer(): Promise<void> {
     app.use(vite.middlewares);
   } else if (fs.existsSync(distDir)) {
     app.use(express.static(distDir));
-    app.get("/{*splat}", (_req: Request, res: Response) => {
+    app.get("*", (_req: Request, res: Response) => {
       res.sendFile(path.join(distDir, "index.html"));
     });
   } else {

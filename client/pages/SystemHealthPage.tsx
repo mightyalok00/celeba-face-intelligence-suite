@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   AlertCircle,
   CheckCircle2,
@@ -21,6 +21,7 @@ interface SystemHealthPageProps {
 export function SystemHealthPage({ health, onRefresh }: SystemHealthPageProps) {
   const [endpoints, setEndpoints] = useState<ApiEndpointDoc[]>([]);
   const [backendUrlInput, setBackendUrlInput] = useState("");
+  const urlInitializedRef = useRef(false);
   const [backendSaving, setBackendSaving] = useState(false);
   const [backendFeedback, setBackendFeedback] = useState<{
     type: "success" | "error";
@@ -28,10 +29,11 @@ export function SystemHealthPage({ health, onRefresh }: SystemHealthPageProps) {
   } | null>(null);
 
   useEffect(() => {
-    if (health?.services.pythonMlBackend.url && !backendUrlInput) {
+    if (health?.services.pythonMlBackend.url && !urlInitializedRef.current) {
+      urlInitializedRef.current = true;
       setBackendUrlInput(health.services.pythonMlBackend.url);
     }
-  }, [health?.services.pythonMlBackend.url, backendUrlInput]);
+  }, [health?.services.pythonMlBackend.url]);
 
   useEffect(() => {
     fetch("/api/docs")

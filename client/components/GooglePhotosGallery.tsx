@@ -693,6 +693,16 @@ export function GooglePhotosGallery({
     return map;
   }, [filteredPhotos]);
 
+  // Keep lightbox index safely within bounds if filteredPhotos changes
+  useEffect(() => {
+    if (activePhotoIndex === null) return;
+    if (filteredPhotos.length === 0) {
+      setActivePhotoIndex(null);
+    } else if (activePhotoIndex >= filteredPhotos.length) {
+      setActivePhotoIndex(filteredPhotos.length - 1);
+    }
+  }, [activePhotoIndex, filteredPhotos.length]);
+
   // Lightbox keyboard navigation
   useEffect(() => {
     if (activePhotoIndex === null) return;
@@ -827,10 +837,13 @@ export function GooglePhotosGallery({
 
         if (quotaWarning) {
           setStorageBanner({ tone: "error", message: quotaWarning });
-        } else if (skippedCount > 0) {
+        } else if (skippedCount > 0 || oversizedCount > 0) {
+          const parts: string[] = [];
+          if (skippedCount > 0) parts.push(`${skippedCount} non-image file(s)`);
+          if (oversizedCount > 0) parts.push(`${oversizedCount} file(s) over 25 MB`);
           setStorageBanner({
             tone: "warning",
-            message: `Imported ${newItems.length} image(s) locally. Skipped ${skippedCount} non-image file(s).`,
+            message: `Imported ${newItems.length} image(s) locally. Skipped ${parts.join(" and ")}.`,
           });
         } else {
           setStorageBanner(null);

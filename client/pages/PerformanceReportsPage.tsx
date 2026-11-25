@@ -8,7 +8,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Download, Maximize2 } from "lucide-react";
+import { Download, Maximize2, ShieldCheck, Database, Calendar, FileCode, Layers } from "lucide-react";
 import { FigureLightbox, type LightboxFigure } from "../components/FigureLightbox";
 import { GlassCard } from "../components/GlassCard";
 import type { BenchmarkRow, BenchmarkSuitesResponse, DatasetAnalyticsResponse } from "../types";
@@ -36,6 +36,49 @@ export function PerformanceReportsPage({ benchmarks, analytics }: PerformanceRep
     if (activeRows.length === 0) return null;
     return activeRows.find((r) => r.model === selectedModelName) ?? activeRows[0];
   }, [activeRows, selectedModelName]);
+
+  // Provenance metadata derived from active suite
+  const suiteMetadata = useMemo(() => {
+    if (!benchmarks) {
+      return {
+        sourceFile: "Unavailable",
+        splitName: "Unavailable",
+        sampleSize: "Unavailable",
+        evaluationDate: "Unavailable",
+        modelVersion: "v2.5.0",
+        isSynthetic: false,
+      };
+    }
+    if (suite === "production") {
+      return {
+        sourceFile: benchmarks.realImageProduction.sourceFile,
+        splitName: "Real-Image Holdout (Identity-Disjoint StratifiedGroupKFold Test)",
+        sampleSize: `${benchmarks.realImageProduction.sampleCount} real images`,
+        evaluationDate: "Unavailable",
+        modelVersion: "v2.5.0",
+        isSynthetic: false,
+      };
+    }
+    if (suite === "latest") {
+      const run = benchmarks.latestTrainingRun;
+      return {
+        sourceFile: run.sourceFile,
+        splitName: "Latest Training Run (Train/Test Split)",
+        sampleSize: `${run.testSamples} test samples (${run.trainSamples} train)`,
+        evaluationDate: run.timestamp || "Unavailable",
+        modelVersion: "v2.5.0",
+        isSynthetic: false,
+      };
+    }
+    return {
+      sourceFile: benchmarks.ciSmokeTestSynthetic.sourceFile,
+      splitName: "Synthetic CI Smoke-Test Pipeline Validation",
+      sampleSize: `${benchmarks.ciSmokeTestSynthetic.sampleCount} synthetic samples`,
+      evaluationDate: "Unavailable",
+      modelVersion: "v2.5.0",
+      isSynthetic: true,
+    };
+  }, [benchmarks, suite]);
 
   const performanceFigures = useMemo(
     () =>
@@ -68,7 +111,7 @@ export function PerformanceReportsPage({ benchmarks, analytics }: PerformanceRep
     <div className="space-y-6">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-50">Model Performance & Evaluation Reports</h2>
+          <h2 className="text-2xl font-bold text-slate-50">Model Performance &amp; Evaluation Reports</h2>
           <p className="text-sm text-slate-400 mt-1">
             Exact Accuracy, Precision, Recall, F1-Score, ROC-AUC, PR-AUC, and Confusion Matrices
             from repository evaluation reports.
@@ -82,7 +125,7 @@ export function PerformanceReportsPage({ benchmarks, analytics }: PerformanceRep
               onClick={() => setSuite("production")}
               className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
                 suite === "production"
-                  ? "bg-sky-500 text-slate-950"
+                  ? "bg-sky-500 text-slate-950 font-semibold"
                   : "text-slate-300 hover:text-white"
               }`}
             >
@@ -93,7 +136,7 @@ export function PerformanceReportsPage({ benchmarks, analytics }: PerformanceRep
               onClick={() => setSuite("latest")}
               className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
                 suite === "latest"
-                  ? "bg-sky-500 text-slate-950"
+                  ? "bg-sky-500 text-slate-950 font-semibold"
                   : "text-slate-300 hover:text-white"
               }`}
             >
@@ -104,7 +147,7 @@ export function PerformanceReportsPage({ benchmarks, analytics }: PerformanceRep
               onClick={() => setSuite("synthetic")}
               className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
                 suite === "synthetic"
-                  ? "bg-amber-400 text-slate-950"
+                  ? "bg-amber-400 text-slate-950 font-semibold"
                   : "text-slate-300 hover:text-white"
               }`}
             >
@@ -134,22 +177,76 @@ export function PerformanceReportsPage({ benchmarks, analytics }: PerformanceRep
       </div>
 
       {suite === "synthetic" && benchmarks && (
-        <div className="p-4 rounded-xl border border-amber-500/40 bg-amber-950/25 text-xs sm:text-sm text-amber-200">
-          <strong>Synthetic Smoke-Test Notice:</strong> {benchmarks.ciSmokeTestSynthetic.note}
+        <div className="p-4 rounded-xl border border-amber-500/40 bg-amber-950/25 text-xs sm:text-sm text-amber-200 space-y-1">
+          <div className="font-bold uppercase tracking-wider text-[11px] text-amber-300">
+            Synthetic Pipeline Validation Notice
+          </div>
+          <div>{benchmarks.ciSmokeTestSynthetic.note}</div>
         </div>
       )}
+
+      {/* Artifact Provenance & Metadata Strip */}
+      <GlassCard className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="space-y-1">
+          <div className="text-[11px] uppercase tracking-wider text-slate-400 font-medium flex items-center gap-1.5">
+            <FileCode className="w-3.5 h-3.5 text-sky-400" /> Source Artifact
+          </div>
+          <div className="text-xs font-mono font-semibold text-slate-100 truncate" title={suiteMetadata.sourceFile}>
+            {suiteMetadata.sourceFile}
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          <div className="text-[11px] uppercase tracking-wider text-slate-400 font-medium flex items-center gap-1.5">
+            <Database className="w-3.5 h-3.5 text-indigo-400" /> Evaluation Split
+          </div>
+          <div className="text-xs font-medium text-slate-100 truncate" title={suiteMetadata.splitName}>
+            {suiteMetadata.splitName}
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          <div className="text-[11px] uppercase tracking-wider text-slate-400 font-medium flex items-center gap-1.5">
+            <Layers className="w-3.5 h-3.5 text-emerald-400" /> Sample Size
+          </div>
+          <div className="text-xs font-mono font-semibold text-slate-100 tabular-nums">
+            {suiteMetadata.sampleSize}
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          <div className="text-[11px] uppercase tracking-wider text-slate-400 font-medium flex items-center gap-1.5">
+            <Calendar className="w-3.5 h-3.5 text-amber-400" /> Evaluation Date
+          </div>
+          <div className="text-xs font-mono font-semibold text-slate-100 tabular-nums truncate">
+            {suiteMetadata.evaluationDate}
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          <div className="text-[11px] uppercase tracking-wider text-slate-400 font-medium flex items-center gap-1.5">
+            <ShieldCheck className="w-3.5 h-3.5 text-sky-400" /> Model Version
+          </div>
+          <div className="text-xs font-mono font-semibold text-sky-300 tabular-nums">
+            {suiteMetadata.modelVersion}
+            <span className="ml-1 px-1.5 py-0.5 rounded bg-white/10 text-[10px] text-slate-300 font-normal">
+              {suiteMetadata.isSynthetic ? "Synthetic CI" : "Real-Image"}
+            </span>
+          </div>
+        </div>
+      </GlassCard>
 
       {/* Full Metrics Table */}
       <GlassCard className="space-y-3">
         <div className="flex items-center justify-between text-xs text-slate-400">
           <span>
-            Source:{" "}
+            Suite Dataset Type:{" "}
             <span className="font-mono text-slate-200">
               {suite === "production"
-                ? benchmarks?.realImageProduction.sourceFile
+                ? "real_image_holdout (75 samples)"
                 : suite === "latest"
-                  ? benchmarks?.latestTrainingRun.sourceFile
-                  : benchmarks?.ciSmokeTestSynthetic.sourceFile}
+                  ? "real_image_training_run (30 test holdout)"
+                  : "synthetic_smoke_test (30 generated samples)"}
             </span>
           </span>
           <span>Click any row to inspect its confusion matrix</span>
@@ -200,10 +297,10 @@ export function PerformanceReportsPage({ benchmarks, analytics }: PerformanceRep
                       {row.f1Score.toFixed(4)}
                     </td>
                     <td className="py-2.5 px-3 text-right font-mono tabular-nums text-emerald-300">
-                      {row.rocAuc !== null ? row.rocAuc.toFixed(4) : "—"}
+                      {row.rocAuc !== null ? row.rocAuc.toFixed(4) : "Unavailable"}
                     </td>
                     <td className="py-2.5 pl-3 text-right font-mono tabular-nums text-slate-300">
-                      {row.prAuc !== null ? row.prAuc.toFixed(4) : "—"}
+                      {row.prAuc !== null ? row.prAuc.toFixed(4) : "Unavailable"}
                     </td>
                   </tr>
                 );
@@ -336,7 +433,7 @@ export function PerformanceReportsPage({ benchmarks, analytics }: PerformanceRep
         <GlassCard className="space-y-4">
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-base font-semibold text-slate-100">
-              Generated Benchmark & Confusion Matrix Figures (reports/figures/)
+              Generated Benchmark &amp; Confusion Matrix Figures (reports/figures/)
             </h3>
             <span className="text-xs text-slate-400">Click any figure to inspect full size</span>
           </div>
@@ -359,6 +456,8 @@ export function PerformanceReportsPage({ benchmarks, analytics }: PerformanceRep
                   <img
                     src={fig.url}
                     alt={fig.title}
+                    loading="lazy"
+                    decoding="async"
                     referrerPolicy="no-referrer"
                     className="w-full h-48 object-contain bg-white"
                   />

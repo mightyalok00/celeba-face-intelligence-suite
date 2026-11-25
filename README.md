@@ -2,6 +2,8 @@
 
 An end-to-end computer vision and multimodal intelligence platform that classifies facial attributes on the **CelebA (CelebFaces Attributes)** dataset. The system integrates a **Google AI Studio Multimodal Reasoning App** (`google-generativeai` / Gemini 1.5 Flash), local PyTorch deep neural networks (**ANN, Deeper Residual Conv2D CNN, Spatial BiLSTM, Vision Transformer**), gradient boosted decision trees (**XGBoost**), **MySQL** relational database (`celeba_db`) with connection pooling, and **5-Fold Stratified Cross-Validation with 5-View Test-Time Augmentation (TTA)**.
 
+**[Open the app in Google AI Studio](https://ai.studio/apps/9db3f01a-b358-46af-81bc-57e4aa115fce)**
+
 ## Validation status
 
 GitHub Actions runs static analysis, security checks, tests and training smoke checks. A successful workflow does not establish production model accuracy. The committed benchmark is a historical experiment, not an independently reproduced result. Image availability, evaluation modality and dataset provenance must be established before interpreting metrics.
